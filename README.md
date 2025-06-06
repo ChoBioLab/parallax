@@ -1,15 +1,13 @@
-Here's the updated README with comprehensive documentation for the current ResolVI pipeline:
-
-#
+# ![nf-core/resolvinf](docs/images/nf-core-resolvinf_logo.png)
 
 **A Nextflow implementation of ResolVI for spatial transcriptomics data analysis**.
 
-[
-[
-[
+[![GitHub Actions CI Status](https://github.com/nf-core/resolvinf/workflows/nf-core%20CI/badge.svg)](https://github.com/nf-core/resolvinf/actions)
+[![GitHub Actions Linting Status](https://github.com/nf-core/resolvinf/workflows/nf-core%20linting/badge.svg)](https://github.com/nf-core/resolvinf/actions)
+[![Nextflow](https://img.shields.io/badge/nextflow-%E2%89%A523.04.0-brightgreen.svg)](https://www.nextflow.io/)
 
-[
-[
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg)](http://bioconda.github.io/)
+[![Docker](https://img.shields.io/docker/automated/nfcore/resolvinf.svg)](https://hub.docker.com/r/nfcore/resolvinf)
 
 ## Introduction
 
