@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "https://raw.githubusercontent.com/nf-core/resolvinf/master/assets/schema_input.json",
+  "title": "nf-core/resolvinf pipeline - params.input schema",
+  "description": "Schema for the file provided with params.input",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "sample_id": {
+        "type": "string",
+        "pattern": "^\\S+$",
+        "errorMessage": "Sample name must be provided and cannot contain spaces"
+      },
+      "zarr_path": {
+        "type": "string",
+        "pattern": "^\\S+\\.zarr$",
+        "errorMessage": "Zarr path must be provided and must end with .zarr"
+      }
+    },
+    "required": ["sample_id", "zarr_path"]
+  }
+}
