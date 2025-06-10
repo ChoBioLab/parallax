@@ -2,57 +2,64 @@ process RESOLVI_PREPROCESS {
     tag "$meta.id"
     label 'process_medium'
 
-    conda "bioconda::scanpy bioconda::spatialdata"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/scanpy:1.9.3--pyhd8ed1ab_0' :
-        'quay.io/biocontainers/scanpy:1.9.3--pyhd8ed1ab_0' }"
+    container 'oras://community.wave.seqera.io/library/pip_decoupler_scanpy_scvi-tools:8124a7e473830fad'
 
     input:
-    tuple val(meta), path(zarr_store)
+    tuple val(meta), path(adata)
 
     output:
-    tuple val(meta), path("*.h5ad"), emit: adata
-    path "versions.yml", emit: versions
+    tuple val(meta), path("*_preprocessed.h5ad"), emit: adata
+    path "versions.yml"                         , emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
 
     script:
+    def args = task.ext.args ?: ''
+    def prefix = task.ext.prefix ?: "${meta.id}"
+
     """
-    #!/usr/bin/env python3
+    python3 << 'EOF'
+import scanpy as sc
+import pandas as pd
+import numpy as np
+import scvi
+import decoupler as dc
 
-    import spatialdata as sd
-    import scanpy as sc
-    import pandas as pd
-    import numpy as np
+# Load data
+adata = sc.read_h5ad("${adata}")
 
-    # Load spatialdata zarr store
-    sdata = sd.read_zarr("${zarr_store}")
+# Basic preprocessing
+sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
 
-    # Convert to AnnData (adjust based on your sopa output structure)
-    adata = sdata.tables['table']  # Adjust key as needed
+# Save preprocessed data
+adata.write("${prefix}_preprocessed.h5ad")
 
-    # Setup spatial coordinates
-    if 'X_spatial' not in adata.obsm:
-        # Extract coordinates from spatialdata
-        coords = sdata.points['transcripts'][['x', 'y']].values  # Adjust as needed
-        adata.obsm['X_spatial'] = coords
+# Write versions
+versions = {
+    "scanpy": sc.__version__,
+    "scvi-tools": scvi.__version__,
+    "decoupler": dc.__version__
+}
 
-    # Ensure required columns exist
-    if 'annotation' not in adata.obs and 'cell_type' in adata.obs:
-        adata.obs['annotation'] = adata.obs['cell_type']
+with open("versions.yml", "w") as f:
+    f.write('"${task.process}":\\n')
+    for tool, version in versions.items():
+        f.write(f'    {tool}: {version}\\n')
+EOF
+    """
 
-    # Setup counts layer
-    if 'counts' not in adata.layers:
-        if 'raw_counts' in adata.layers:
-            adata.layers['counts'] = adata.layers['raw_counts']
-        else:
-            adata.layers['counts'] = adata.X.copy()
+    stub:
+    def prefix = task.ext.prefix ?: "${meta.id}"
+    """
+    touch ${prefix}_preprocessed.h5ad
 
-    # Save preprocessed data
-    adata.write_h5ad("${meta.id}_preprocessed.h5ad")
-
-    # Write versions
-    with open("versions.yml", "w") as f:
-        f.write('"${task.process}":\\n')
-        f.write(f'    scanpy: {sc.__version__}\\n')
-        f.write(f'    spatialdata: {sd.__version__}\\n')
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        scanpy: 1.9.6
+        scvi-tools: 1.0.4
+        decoupler: 1.4.0
+    END_VERSIONS
     """
 }
+

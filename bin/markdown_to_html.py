@@ -1,100 +1,101 @@
-#!/usr/bin/env python
-from __future__ import print_function
-import argparse
-import markdown
-import os
-import sys
+#!/usr/bin/env python3
 
-def convert_markdown(in_fn):
-    input_md = open(in_fn, mode="r", encoding="utf-8").read()
+import argparse
+import sys
+import markdown
+
+def convert_markdown(md_file):
+    """Convert markdown to HTML with basic extensions only."""
+    with open(md_file, 'r') as f:
+        md_content = f.read()
+
+    # Use only basic extensions that come with markdown
     html = markdown.markdown(
-        "[TOC]\n" + input_md,
-        extensions = [
-            'pymdownx.extra',
-            'pymdownx.b64',
-            'pymdownx.highlight',
-            'pymdownx.emoji',
-            'pymdownx.tilde',
-            'toc'
-        ],
-        extension_configs = {
-            'pymdownx.b64': {
-                'base_path': os.path.dirname(in_fn)
-            },
-            'pymdownx.highlight': {
-                'noclasses': True
-            },
-            'toc': {
-                'title': 'Table of Contents'
-            }
-        }
+        md_content,
+        extensions=[
+            'markdown.extensions.tables',
+            'markdown.extensions.fenced_code',
+            'markdown.extensions.codehilite',
+            'markdown.extensions.toc'
+        ]
     )
     return html
 
-def wrap_html(contents):
-    header = """<!DOCTYPE html><html>
-    <head>
-        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-        <style>
-            body {
-              font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
-              padding: 3em;
-              margin-right: 350px;
-              max-width: 100%;
-            }
-            .toc {
-              position: fixed;
-              right: 20px;
-              width: 300px;
-              padding-top: 20px;
-              overflow: scroll;
-              height: calc(100% - 3em - 20px);
-            }
-            .toctitle {
-              font-size: 1.8em;
-              font-weight: bold;
-            }
-            .toc > ul {
-              padding: 0;
-              margin: 1rem 0;
-              list-style-type: none;
-            }
-            .toc > ul ul { padding-left: 20px; }
-            .toc > ul > li > a { display: none; }
-            img { max-width: 800px; }
-            pre {
-              padding: 0.6em 1em;
-            }
-            h2 {
+def wrap_html(body_html, title="Analysis Results"):
+    """Wrap the converted markdown in a complete HTML document."""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        h1, h2, h3 {{ color: #2c3e50; }}
+        code {{
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }}
+        pre {{
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }}
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }}
+        th, td {{
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }}
+        th {{ background-color: #f2f2f2; }}
+        .toc {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; }}
+    </style>
+</head>
+<body>
+{body_html}
+</body>
+</html>"""
 
-            }
-        </style>
-    </head>
-    <body>
-    <div class="container">
-    """
-    footer = """
-    </div>
-    </body>
-    </html>
-    """
-    return header + contents + footer
+def main():
+    parser = argparse.ArgumentParser(description='Convert Markdown to HTML')
+    parser.add_argument('mdfile', type=argparse.FileType('r'), help='Input markdown file')
+    parser.add_argument('-o', '--output', required=True, help='Output HTML file')
+    parser.add_argument('--title', default='Analysis Results', help='HTML page title')
 
+    args = parser.parse_args()
 
-def parse_args(args=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('mdfile', type=argparse.FileType('r'), nargs='?',
-                        help='File to convert. Defaults to stdin.')
-    parser.add_argument('-o', '--out', type=argparse.FileType('w'),
-                        default=sys.stdout,
-                        help='Output file name. Defaults to stdout.')
-    return parser.parse_args(args)
+    try:
+        converted_md = convert_markdown(args.mdfile.name)
+        full_html = wrap_html(converted_md, args.title)
 
-def main(args=None):
-    args = parse_args(args)
-    converted_md = convert_markdown(args.mdfile.name)
-    html = wrap_html(converted_md)
-    args.out.write(html)
+        with open(args.output, 'w') as f:
+            f.write(full_html)
+
+        print(f"Successfully converted {args.mdfile.name} to {args.output}")
+
+    except Exception as e:
+        print(f"Error converting markdown: {e}", file=sys.stderr)
+        return 1
+
+    finally:
+        args.mdfile.close()
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main())
+

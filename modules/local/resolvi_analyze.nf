@@ -4,9 +4,7 @@ process RESOLVI_ANALYZE {
     label 'process_gpu'
 
     conda "bioconda::scvi-tools bioconda::decoupler"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/scvi-tools:1.0.4--pyhdfd78af_0' :
-        'quay.io/biocontainers/scvi-tools:1.0.4--pyhdfd78af_0' }"
+    container 'oras://community.wave.seqera.io/library/pip_decoupler_scanpy_scvi-tools:8124a7e473830fad'
 
     input:
     tuple val(meta), path(model_dir), path(adata)
