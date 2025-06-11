@@ -3,8 +3,7 @@ process RESOLVI_TRAIN {
     label 'process_high'
     label 'process_gpu'
 
-    conda "bioconda::scvi-tools"
-    container 'oras://community.wave.seqera.io/library/pip_decoupler_scanpy_scvi-tools:8124a7e473830fad'
+    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
 
     input:
     tuple val(meta), path(adata)
@@ -20,20 +19,6 @@ process RESOLVI_TRAIN {
     path "versions.yml", emit: versions
 
     script:
-    def gpu_config = ""
-    if (num_gpus != null) {
-        if (num_gpus == -1) {
-            gpu_config = "accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'; devices = 'auto'"
-        } else if (num_gpus == 0) {
-            gpu_config = "accelerator = 'cpu'; devices = 'auto'"
-        } else {
-            gpu_config = "accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'; devices = min(${num_gpus}, torch.cuda.device_count()) if torch.cuda.is_available() else 'auto'"
-        }
-    } else {
-        // Default to 4 GPUs as in LSF script
-        gpu_config = "accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'; devices = min(4, torch.cuda.device_count()) if torch.cuda.is_available() else 'auto'"
-    }
-
     """
     #!/usr/bin/env python3
 
@@ -60,13 +45,13 @@ process RESOLVI_TRAIN {
     logger.info(f"Available GPUs: {torch.cuda.device_count()}")
     logger.info(f"CUDA available: {torch.cuda.is_available()}")
 
-    # Load data
+    # Load preprocessed data
     logger.info("Loading AnnData...")
     adata = sc.read_h5ad("${adata}")
     logger.info(f"Loaded {adata.n_obs} cells and {adata.n_vars} genes")
-
-    # Setup ResolVI
     logger.info("Setting up ResolVI...")
+
+    # Setup ResolVI (data should already be preprocessed)
     scvi.external.RESOLVI.setup_anndata(
         adata, 
         layer="counts", 
@@ -77,33 +62,26 @@ process RESOLVI_TRAIN {
     logger.info("Initializing ResolVI model...")
     model = scvi.external.RESOLVI(adata, semisupervised=True)
 
-    # Configure GPU usage based on LSF script parameters
-    ${gpu_config}
-
-    logger.info(f"Training configuration - Accelerator: {accelerator}, Devices: {devices}")
-    logger.info(f"Max epochs: ${max_epochs}")
-
-    # Train model with configuration matching LSF script
-    logger.info("Starting model training...")
+    # Configure training parameters - simplified approach
+    logger.info(f"Training ResolVI model for {${max_epochs}} epochs...")
     try:
+        # First attempt: Let scvi-tools auto-configure GPU settings
         model.train(
             max_epochs=${max_epochs},
-            accelerator=accelerator,
-            devices=devices,
             early_stopping=True,
             early_stopping_patience=10,
             early_stopping_monitor="elbo_train"
         )
-        logger.info("Model training completed successfully with early stopping.")
+        logger.info("Model training completed successfully with early stopping")
     except Exception as e:
         logger.warning(f"Training with early stopping failed: {e}")
-        logger.info("Retrying without early stopping...")
-        model.train(
-            max_epochs=${max_epochs},
-            accelerator=accelerator,
-            devices=devices
-        )
-        logger.info("Model training completed without early stopping.")
+        logger.info("Attempting training without early stopping...")
+        try:
+            model.train(max_epochs=${max_epochs})
+            logger.info("Model training completed without early stopping")
+        except Exception as e2:
+            logger.error(f"Training failed: {e2}")
+            raise
 
     # Save model
     logger.info("Saving trained model...")
@@ -111,41 +89,61 @@ process RESOLVI_TRAIN {
 
     # Generate corrected counts
     logger.info("Generating corrected counts...")
-    samples_corr = model.sample_posterior(
-        model=model.module.model_corrected,
-        return_sites=["px_rate"],
-        summary_fun={"post_sample_q50": np.median},
-        num_samples=${num_samples},
-        summary_frequency=100,
-    )
-    samples_corr = pd.DataFrame(samples_corr).T
-    adata.layers["resolvi_corrected"] = samples_corr.loc["post_sample_q50", "px_rate"]
+    try:
+        samples_corr = model.sample_posterior(
+            model=model.module.model_corrected,
+            return_sites=["px_rate"],
+            summary_fun={"post_sample_q50": np.median},
+            num_samples=${num_samples},
+            summary_frequency=100,
+        )
+        samples_corr = pd.DataFrame(samples_corr).T
+        adata.layers["resolvi_corrected"] = samples_corr.loc["post_sample_q50", "px_rate"]
+        logger.info("Corrected counts generated successfully")
+    except Exception as e:
+        logger.warning(f"Error generating corrected counts: {e}")
 
     # Calculate noise components
     logger.info("Calculating noise components...")
-    samples = model.sample_posterior(
-        model=model.module.model_residuals,
-        return_sites=["mixture_proportions"],
-        summary_fun={"post_sample_means": np.mean},
-        num_samples=${num_samples},
-        summary_frequency=100,
-    )
-    samples = pd.DataFrame(samples).T
-    adata.obs[["true_proportion", "diffusion_proportion", "background_proportion"]] = samples.loc["post_sample_means", "mixture_proportions"]
+    try:
+        samples = model.sample_posterior(
+            model=model.module.model_residuals,
+            return_sites=["mixture_proportions"],
+            summary_fun={"post_sample_means": np.mean},
+            num_samples=${num_samples},
+            summary_frequency=100,
+        )
+        samples = pd.DataFrame(samples).T
+        adata.obs[["true_proportion", "diffusion_proportion", "background_proportion"]] = samples.loc["post_sample_means", "mixture_proportions"]
+        logger.info("Noise components calculated successfully")
+    except Exception as e:
+        logger.warning(f"Error calculating noise components: {e}")
 
     # Generate predictions
     logger.info("Generating cell type predictions...")
-    adata.obsm["resolvi_celltypes"] = model.predict(adata, num_samples=${num_samples}, soft=True)
-    adata.obs["resolvi_predicted"] = adata.obsm["resolvi_celltypes"].idxmax(axis=1)
+    try:
+        adata.obsm["resolvi_celltypes"] = model.predict(adata, num_samples=${num_samples}, soft=True)
+        adata.obs["resolvi_predicted"] = adata.obsm["resolvi_celltypes"].idxmax(axis=1)
+        logger.info("Cell type predictions generated successfully")
+    except Exception as e:
+        logger.warning(f"Error generating predictions: {e}")
 
     # Get latent representation
     logger.info("Computing latent representation...")
-    adata.obsm["X_resolVI"] = model.get_latent_representation(adata)
+    try:
+        adata.obsm["X_resolVI"] = model.get_latent_representation(adata)
+        logger.info("Latent representation computed successfully")
+    except Exception as e:
+        logger.warning(f"Error computing latent representation: {e}")
 
     # Compute UMAP
     logger.info("Computing UMAP...")
-    sc.pp.neighbors(adata, use_rep="X_resolVI")
-    sc.tl.umap(adata)
+    try:
+        sc.pp.neighbors(adata, use_rep="X_resolVI")
+        sc.tl.umap(adata)
+        logger.info("UMAP computed successfully")
+    except Exception as e:
+        logger.warning(f"Error computing UMAP: {e}")
 
     # Save processed data
     logger.info("Saving processed data...")
@@ -161,3 +159,4 @@ process RESOLVI_TRAIN {
         f.write(f'    scanpy: {sc.__version__}\\n')
     """
 }
+

@@ -2,7 +2,7 @@ process RESOLVI_VISUALIZE {
     tag "$meta.id"
     label 'process_medium'
 
-    container 'oras://community.wave.seqera.io/library/pip_decoupler_scanpy_scvi-tools:8124a7e473830fad'
+    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
 
     input:
     tuple val(meta), path(adata)
