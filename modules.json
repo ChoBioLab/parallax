@@ -1,0 +1,17 @@
+{
+  "name": "nf-core/resolvinf",
+  "homePage": "https://github.com/nf-core/resolvinf",
+  "repos": {
+    "https://github.com/nf-core/modules.git": {
+      "modules": {
+        "nf-core": {
+          "multiqc": {
+            "branch": "master",
+            "git_sha": "e594e9dfaffa7572afc11bafc634984fd4cbd87b",
+            "installed_by": ["modules"]
+          }
+        }
+      }
+    }
+  }
+}
