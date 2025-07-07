@@ -27,10 +27,16 @@ def helpMessage() {
                                       Available: conda, docker, singularity, test, awsbatch, <institute> and more
 
     ResolVI options:
+      --annotation_label [str]        Column name to use for cell type annotation (default: 'cell_type')
       --marker_genes [file]           Path to file containing marker genes (one per line) or comma-separated list
       --max_epochs [int]              Maximum training epochs (default: 100)
       --num_samples [int]             Number of posterior samples (default: 20)
       --num_gpus [int]                Number of GPUs for model training. 0 for CPU, -1 for all available (default: auto-detect)
+      --da_comparisons [file]         JSON or CSV file specifying differential abundance comparisons
+
+    scVIVA options:
+      --scviva_max_epochs [int]       Maximum training epochs for scVIVA (default: 100)
+      --scviva_comparisons [file]     JSON or CSV file specifying scVIVA niche-aware DE comparisons
 
     Other options:
       --outdir [file]                 The output directory where the results will be saved (default: './results')
@@ -62,6 +68,8 @@ include { RESOLVI_PREPROCESS } from './modules/local/resolvi_preprocess'
 include { RESOLVI_TRAIN } from './modules/local/resolvi_train'
 include { RESOLVI_ANALYZE } from './modules/local/resolvi_analyze'
 include { RESOLVI_VISUALIZE } from './modules/local/resolvi_visualize'
+include { SCVIVA_TRAIN } from './modules/local/scviva_train'
+include { SCVIVA_ANALYZE } from './modules/local/scviva_analyze'
 
 /*
  * SET UP CONFIGURATION VARIABLES
@@ -123,10 +131,14 @@ def summary = [:]
 if (workflow.revision) summary['Pipeline Release'] = workflow.revision
 summary['Run Name']         = custom_runName ?: workflow.runName
 summary['Input']            = params.input
+summary['Annotation Label'] = params.annotation_label ?: 'cell_type'
 summary['Marker Genes']     = params.marker_genes ? (params.marker_genes instanceof List ? params.marker_genes.size() + " genes" : params.marker_genes) : 'Default set'
 summary['Max Epochs']       = params.max_epochs
 summary['Num Samples']      = params.num_samples
 summary['Num GPUs']         = params.num_gpus ?: 'Auto-detect'
+summary['DA Comparisons']   = params.da_comparisons ?: 'Default pairwise'
+summary['scVIVA Max Epochs'] = params.scviva_max_epochs
+summary['scVIVA Comparisons'] = params.scviva_comparisons ?: 'Default pairwise'
 summary['Max Resources']    = "$params.max_memory memory, $params.max_cpus cpus, $params.max_time time per job"
 if (workflow.containerEngine) summary['Container'] = "$workflow.containerEngine - $workflow.container"
 summary['Output dir']       = params.outdir
@@ -170,9 +182,10 @@ workflow RESOLVINF {
 
     ch_versions = Channel.empty()
 
-    // Preprocess spatialdata zarr stores
+    // Preprocess spatialdata zarr stores with flexible annotation label
     RESOLVI_PREPROCESS (
-        ch_samplesheet
+        ch_samplesheet,
+        params.annotation_label ?: 'cell_type'
     )
     ch_versions = ch_versions.mix(RESOLVI_PREPROCESS.out.versions.first())
 
@@ -186,23 +199,46 @@ workflow RESOLVINF {
     )
     ch_versions = ch_versions.mix(RESOLVI_TRAIN.out.versions.first())
 
-    // Perform analysis (DE, DNA)
+    // Fork the workflow after ResolVI training for maximum parallelization
+    trained_data = RESOLVI_TRAIN.out.adata_processed
+    trained_models = RESOLVI_TRAIN.out.model
+
+    // ResolVI analysis branch (differential abundance only)
     RESOLVI_ANALYZE (
-        RESOLVI_TRAIN.out.model.join(RESOLVI_TRAIN.out.adata_processed)
+        trained_models.join(trained_data),
+        params.da_comparisons ?: ""
     )
     ch_versions = ch_versions.mix(RESOLVI_ANALYZE.out.versions.first())
 
-    // Generate visualizations
+    // ResolVI visualization branch (runs in parallel with scVIVA)
     RESOLVI_VISUALIZE (
         RESOLVI_ANALYZE.out.adata_final,
         ch_marker_genes.collect().ifEmpty([])
     )
     ch_versions = ch_versions.mix(RESOLVI_VISUALIZE.out.versions.first())
 
+    // scVIVA training branch (runs in parallel with ResolVI analyze/visualize)
+    SCVIVA_TRAIN (
+        trained_data,
+        params.scviva_max_epochs
+    )
+    ch_versions = ch_versions.mix(SCVIVA_TRAIN.out.versions.first())
+
+    // scVIVA niche-aware analysis branch
+    SCVIVA_ANALYZE (
+        SCVIVA_TRAIN.out.model.join(SCVIVA_TRAIN.out.adata_processed),
+        params.scviva_comparisons ?: ""
+    )
+    ch_versions = ch_versions.mix(SCVIVA_ANALYZE.out.versions.first())
+
     emit:
-    adata_final = RESOLVI_ANALYZE.out.adata_final
-    model = RESOLVI_TRAIN.out.model
+    resolvi_adata = RESOLVI_ANALYZE.out.adata_final
+    scviva_adata = SCVIVA_ANALYZE.out.adata_final
+    resolvi_model = trained_models
+    scviva_model = SCVIVA_TRAIN.out.model
     plots = RESOLVI_VISUALIZE.out.plots
+    da_results = RESOLVI_ANALYZE.out.da_results
+    scviva_de_results = SCVIVA_ANALYZE.out.de_results
     versions = ch_versions
 }
 
