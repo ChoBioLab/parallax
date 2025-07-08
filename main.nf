@@ -11,8 +11,37 @@
 
 nextflow.enable.dsl = 2
 
+/*
+ * DEFAULT PARAMETERS
+ */
+params.help = false
+params.input = null
+params.outdir = './results'
+params.annotation_label = 'cell_type'
+params.marker_genes = null
+params.max_epochs = 100
+params.num_samples = 20
+params.num_gpus = 0
+params.da_comparisons = null
+params.scviva_max_epochs = 100
+params.scviva_comparisons = null
+params.email = null
+params.email_on_fail = null
+params.max_multiqc_email_size = '25MB'
+params.name = false
+params.awsqueue = null
+params.awsregion = null
+params.awscli = null
+params.tracedir = "${params.outdir}/pipeline_info"
+params.max_memory = '128.GB'
+params.max_cpus = 16
+params.max_time = '240.h'
+params.config_profile_description = null
+params.config_profile_contact = null
+params.config_profile_url = null
+params.hostnames = false
+
 def helpMessage() {
-    log.info nfcoreHeader()
     log.info"""
 
     Usage:
@@ -59,9 +88,9 @@ if (params.help) {
 }
 
 /*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     IMPORT MODULES/SUBWORKFLOWS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
 include { RESOLVI_PREPROCESS } from './modules/local/resolvi_preprocess'
@@ -93,7 +122,7 @@ if (workflow.profile.contains('awsbatch')) {
 }
 
 // Stage config files
-ch_output_docs = file("$baseDir/docs/output.md", checkIfExists: true)
+ch_output_docs = file("$baseDir/docs/output.md", checkIfExists: false)
 
 /*
  * Create a channel for input spatialdata files
@@ -101,16 +130,6 @@ ch_output_docs = file("$baseDir/docs/output.md", checkIfExists: true)
 if (!params.input) {
     exit 1, "Input samplesheet not specified!"
 }
-
-ch_input = Channel
-    .fromPath(params.input)
-    .splitCsv(header: true)
-    .map { row ->
-        def meta = [:]
-        meta.id = row.sample_id
-        meta.single_cell = true
-        [meta, file(row.zarr_path, checkIfExists: true)]
-    }
 
 // Process marker genes parameter
 ch_marker_genes = Channel.empty()
@@ -126,7 +145,12 @@ if (params.marker_genes) {
 }
 
 // Header log info
-log.info nfcoreHeader()
+log.info """
+=======================================================
+                    nf-core/resolvinf
+=======================================================
+""".stripIndent()
+
 def summary = [:]
 if (workflow.revision) summary['Pipeline Release'] = workflow.revision
 summary['Run Name']         = custom_runName ?: workflow.runName
@@ -163,82 +187,80 @@ if (params.email || params.email_on_fail) {
 log.info summary.collect { k,v -> "${k.padRight(18)}: $v" }.join("\n")
 log.info "-\033[2m--------------------------------------------------\033[0m-"
 
-// Check the hostnames against configured profiles
-checkHostname()
-
 /*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     MAIN WORKFLOW
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-workflow RESOLVINF {
-
-    take:
-    ch_samplesheet // channel: samplesheet read in from --input
-    ch_marker_genes // channel: marker genes
-
-    main:
+workflow {
+    // Create input channel from samplesheet
+    ch_input = Channel
+        .fromPath(params.input)
+        .splitCsv(header: true)
+        .map { row ->
+            def meta = [:]
+            meta.id = row.sample_id
+            meta.single_cell = true
+            [meta, file(row.zarr_path, checkIfExists: true)]
+        }
 
     ch_versions = Channel.empty()
 
-    // Preprocess spatialdata zarr stores with flexible annotation label
+    // MODULE: Run preprocessing
     RESOLVI_PREPROCESS (
-        ch_samplesheet,
-        params.annotation_label ?: 'cell_type'
+        ch_input,
+        params.annotation_label
     )
     ch_versions = ch_versions.mix(RESOLVI_PREPROCESS.out.versions.first())
 
-    // Train ResolVI model
+    // MODULE: Train ResolVI model
     RESOLVI_TRAIN (
         RESOLVI_PREPROCESS.out.adata,
-        ch_marker_genes.collect().ifEmpty([]),
+        params.annotation_label,
         params.max_epochs,
         params.num_samples,
         params.num_gpus
     )
     ch_versions = ch_versions.mix(RESOLVI_TRAIN.out.versions.first())
 
-    // Fork the workflow after ResolVI training for maximum parallelization
-    trained_data = RESOLVI_TRAIN.out.adata_processed
-    trained_models = RESOLVI_TRAIN.out.model
+    // Combine model and adata for RESOLVI_ANALYZE
+    ch_resolvi_combined = RESOLVI_TRAIN.out.model
+        .join(RESOLVI_TRAIN.out.adata, by: 0)
+        .map { meta, model_dir, adata -> [meta, model_dir, adata] }
 
-    // ResolVI analysis branch (differential abundance only)
+    // Branch 1: ResolVI Analysis
     RESOLVI_ANALYZE (
-        trained_models.join(trained_data),
-        params.da_comparisons ?: ""
+        ch_resolvi_combined,
+        params.da_comparisons ?: "default_pairwise"
     )
     ch_versions = ch_versions.mix(RESOLVI_ANALYZE.out.versions.first())
 
-    // ResolVI visualization branch (runs in parallel with scVIVA)
-    RESOLVI_VISUALIZE (
-        RESOLVI_ANALYZE.out.adata_final,
-        ch_marker_genes.collect().ifEmpty([])
-    )
-    ch_versions = ch_versions.mix(RESOLVI_VISUALIZE.out.versions.first())
-
-    // scVIVA training branch (runs in parallel with ResolVI analyze/visualize)
+    // Branch 2: scVIVA Training
     SCVIVA_TRAIN (
-        trained_data,
-        params.scviva_max_epochs
+        RESOLVI_TRAIN.out.model,
+        RESOLVI_TRAIN.out.adata,
+        params.scviva_max_epochs,
+        params.num_gpus
     )
     ch_versions = ch_versions.mix(SCVIVA_TRAIN.out.versions.first())
 
-    // scVIVA niche-aware analysis branch
+    // Branch 3: scVIVA Analysis
     SCVIVA_ANALYZE (
-        SCVIVA_TRAIN.out.model.join(SCVIVA_TRAIN.out.adata_processed),
-        params.scviva_comparisons ?: ""
+        SCVIVA_TRAIN.out.model_dir,
+        SCVIVA_TRAIN.out.adata_trained,
+        params.scviva_comparisons ?: "default_pairwise"
     )
     ch_versions = ch_versions.mix(SCVIVA_ANALYZE.out.versions.first())
 
+    // Branch 4: ResolVI Visualization
+    RESOLVI_VISUALIZE (
+        RESOLVI_TRAIN.out.adata,
+        params.marker_genes
+    )
+    ch_versions = ch_versions.mix(RESOLVI_VISUALIZE.out.versions.first())
+
     emit:
-    resolvi_adata = RESOLVI_ANALYZE.out.adata_final
-    scviva_adata = SCVIVA_ANALYZE.out.adata_final
-    resolvi_model = trained_models
-    scviva_model = SCVIVA_TRAIN.out.model
-    plots = RESOLVI_VISUALIZE.out.plots
-    da_results = RESOLVI_ANALYZE.out.da_results
-    scviva_de_results = SCVIVA_ANALYZE.out.de_results
     versions = ch_versions
 }
 
@@ -262,7 +284,25 @@ process get_software_versions {
     echo $workflow.nextflow.version > v_nextflow.txt
     python --version > v_python.txt
     pip list | grep -E "(scanpy|scvi-tools|spatialdata)" > v_spatial_tools.txt || echo "No spatial tools found" > v_spatial_tools.txt
-    scrape_software_versions.py &> software_versions_mqc.yaml
+
+    # Create a simple software versions file
+    cat > software_versions_mqc.yaml << EOF
+    id: 'software_versions'
+    section_name: 'Software Versions'
+    section_href: 'https://github.com/nf-core/resolvinf'
+    plot_type: 'html'
+    description: 'are collected at run time from the software output.'
+    data: |
+        <dl class="dl-horizontal">
+            <dt>Pipeline</dt><dd>v$workflow.manifest.version</dd>
+            <dt>Nextflow</dt><dd>v$workflow.nextflow.version</dd>
+        </dl>
+    EOF
+
+    # Create CSV file
+    echo "Software,Version" > software_versions.csv
+    echo "Pipeline,$workflow.manifest.version" >> software_versions.csv
+    echo "Nextflow,$workflow.nextflow.version" >> software_versions.csv
     """
 }
 
@@ -280,31 +320,26 @@ process output_documentation {
 
     script:
     """
-    markdown_to_html.py $output_docs -o results_description.html
+    # Create a simple HTML documentation
+    cat > results_description.html << 'EOF'
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>ResolVI-nf Results</title>
+    </head>
+    <body>
+        <h1>ResolVI-nf Pipeline Results</h1>
+        <p>This directory contains the results from the ResolVI-nf pipeline analysis.</p>
+        <h2>Output Structure</h2>
+        <ul>
+            <li><strong>resolvi/</strong> - ResolVI model results and predictions</li>
+            <li><strong>scviva/</strong> - scVIVA model results and niche-aware differential expression</li>
+            <li><strong>pipeline_info/</strong> - Pipeline execution information and software versions</li>
+        </ul>
+    </body>
+    </html>
+    EOF
     """
-}
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    RUN MAIN WORKFLOW
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-workflow {
-
-    // Run main analysis workflow
-    RESOLVINF (
-        ch_input,
-        ch_marker_genes
-    )
-
-    // Get software versions
-    get_software_versions()
-
-    // Output documentation
-    output_documentation(
-        ch_output_docs
-    )
 }
 
 /*
@@ -336,87 +371,26 @@ workflow.onComplete {
     if (workflow.repository) email_fields['summary']['Pipeline repository Git URL'] = workflow.repository
     if (workflow.commitId) email_fields['summary']['Pipeline repository Git Commit'] = workflow.commitId
     if (workflow.revision) email_fields['summary']['Pipeline Git branch/tag'] = workflow.revision
-    email_fields['summary']['Nextflow Version'] = workflow.nextflow.version
-    email_fields['summary']['Nextflow Build'] = workflow.nextflow.build
-    email_fields['summary']['Nextflow Compile Timestamp'] = workflow.nextflow.timestamp
+    if (workflow.container) email_fields['summary']['Docker image'] = workflow.container
 
-    // Check if we are only sending emails on failure
-    email_address = params.email
-    if (!params.email && params.email_on_fail && !workflow.success) {
-        email_address = params.email_on_fail
-    }
-
-    // Render the TXT template
-    def engine = new groovy.text.GStringTemplateEngine()
-    def tf = new File("$baseDir/assets/email_template.txt")
-    def txt_template = engine.createTemplate(tf).make(email_fields)
-    def email_txt = txt_template.toString()
-
-    // Render the HTML template
-    def hf = new File("$baseDir/assets/email_template.html")
-    def html_template = engine.createTemplate(hf).make(email_fields)
-    def email_html = html_template.toString()
-
-    // Render the sendmail template
-    def smail_fields = [ email: email_address, subject: subject, email_txt: email_txt, email_html: email_html, baseDir: "$baseDir", mqcFile: null, mqcMaxSize: params.max_multiqc_email_size ]
-    def sf = new File("$baseDir/assets/sendmail_template.txt")
-    def sendmail_template = engine.createTemplate(sf).make(smail_fields)
-    def sendmail_html = sendmail_template.toString()
-
-    // Send the HTML e-mail
-    if (email_address) {
-        try {
-            if (params.plaintext_email) { throw GroovyException('Send plaintext e-mail, not HTML') }
-            // Try to send HTML e-mail using sendmail
-            [ 'sendmail', '-t' ].execute() << sendmail_html
-            log.info "[nf-core/resolvinf] Sent summary e-mail to $email_address (sendmail)"
-        } catch (all) {
-            // Catch failures and try with plaintext
-            [ 'mail', '-s', subject, email_address ].execute() << email_txt
-            log.info "[nf-core/resolvinf] Sent summary e-mail to $email_address (mail)"
-        }
-    }
-
-    // Write summary e-mail HTML to a file
-    def output_d = new File("${params.outdir}/pipeline_info/")
-    if (!output_d.exists()) {
-        output_d.mkdirs()
-    }
-    def output_hf = new File(output_d, "pipeline_report.html")
-    output_hf.withWriter { w -> w << email_html }
-    def output_tf = new File(output_d, "pipeline_report.txt")
-    output_tf.withWriter { w -> w << email_txt }
-
-    c_green = params.monochrome_logs ? '' : "\033[0;32m";
-    c_purple = params.monochrome_logs ? '' : "\033[0;35m";
-    c_red = params.monochrome_logs ? '' : "\033[0;31m";
-    c_reset = params.monochrome_logs ? '' : "\033[0m";
-
-    if (workflow.stats.ignoredCount > 0 && workflow.success) {
-        log.info "-${c_purple}Warning, pipeline completed, but with errored process(es) ${c_reset}-"
-        log.info "-${c_red}Number of ignored errored process(es) : ${workflow.stats.ignoredCount} ${c_reset}-"
-        log.info "-${c_green}Number of successfully ran process(es) : ${workflow.stats.succeedCount} ${c_reset}-"
-    }
-
-    if (workflow.success) {
-        log.info "-${c_purple}[nf-core/resolvinf]${c_green} Pipeline completed successfully${c_reset}-"
-    } else {
-        checkHostname()
-        log.info "-${c_purple}[nf-core/resolvinf]${c_red} Pipeline completed with errors${c_reset}-"
-    }
+    // On completion, print out the summary
+    log.info "========================================="
+    log.info "Pipeline completed at: $workflow.complete"
+    log.info "Execution status: ${ workflow.success ? 'OK' : 'failed' }"
+    log.info "========================================="
 }
 
 def nfcoreHeader() {
     // Log colors ANSI codes
-    c_black = params.monochrome_logs ? '' : "\033[0;30m";
-    c_blue = params.monochrome_logs ? '' : "\033[0;34m";
-    c_cyan = params.monochrome_logs ? '' : "\033[0;36m";
-    c_dim = params.monochrome_logs ? '' : "\033[2m";
-    c_green = params.monochrome_logs ? '' : "\033[0;32m";
-    c_purple = params.monochrome_logs ? '' : "\033[0;35m";
-    c_reset = params.monochrome_logs ? '' : "\033[0m";
-    c_white = params.monochrome_logs ? '' : "\033[0;37m";
-    c_yellow = params.monochrome_logs ? '' : "\033[0;33m";
+    def c_black = params.monochrome_logs ? '' : "\033[0;30m";
+    def c_blue = params.monochrome_logs ? '' : "\033[0;34m";
+    def c_cyan = params.monochrome_logs ? '' : "\033[0;36m";
+    def c_dim = params.monochrome_logs ? '' : "\033[2m";
+    def c_green = params.monochrome_logs ? '' : "\033[0;32m";
+    def c_purple = params.monochrome_logs ? '' : "\033[0;35m";
+    def c_reset = params.monochrome_logs ? '' : "\033[0m";
+    def c_white = params.monochrome_logs ? '' : "\033[0;37m";
+    def c_yellow = params.monochrome_logs ? '' : "\033[0;33m";
 
     return """    -${c_dim}--------------------------------------------------${c_reset}-
                                             ${c_green},--.${c_black}/${c_green},-.${c_reset}
@@ -449,4 +423,3 @@ def checkHostname() {
         }
     }
 }
-

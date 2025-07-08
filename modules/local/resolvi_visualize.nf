@@ -2,7 +2,13 @@ process RESOLVI_VISUALIZE {
     tag "$meta.id"
     label 'process_medium'
     
-    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
+        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
+
+    containerOptions '--writable-tmpfs'
+
+    conda (params.enable_conda ? "bioconda::scanpy bioconda::scvi-tools" : null)
     
     input:
     tuple val(meta), path(adata)
@@ -21,13 +27,17 @@ process RESOLVI_VISUALIZE {
     def genes_arg = marker_genes ? marker_genes.join(',') : ""
     """
     #!/usr/bin/env python3
+
+    # Disable numba caching to avoid container issues
+    import os
+    os.environ['NUMBA_CACHE_DIR'] = '/tmp'
+    os.environ['NUMBA_DISABLE_JIT'] = '1'
     
     import scanpy as sc
     import pandas as pd
     import numpy as np
     import matplotlib.pyplot as plt
     import seaborn as sns
-    import os
     import logging
     import warnings
     import subprocess
