@@ -1,8 +1,14 @@
 process SCVIVA_TRAIN {
     tag "$meta.id"
-    label 'process_high_gpu'
+    label 'process_gpu'
 
-    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
+    conda "${moduleDir}/../../environment.yml"
+
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
+        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
+
+    containerOptions '--writable-tmpfs'
 
     input:
     tuple val(meta), path(resolvi_model_dir)
@@ -22,157 +28,166 @@ process SCVIVA_TRAIN {
     script:
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
-    #!/bin/bash
-    set -euo pipefail
+    #!/usr/bin/env python3
 
-    # Explicitly activate conda environment
-    source /hpc/users/tastac01/micromamba/etc/profile.d/conda.sh
-    conda activate /sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi
+    # Import and setup environment
+    import sys
+    sys.path.insert(0, '${projectDir}/bin')
 
-    python << 'EOF'
-import os
-os.environ['NUMBA_CACHE_DIR'] = '/tmp'
-os.environ['NUMBA_DISABLE_JIT'] = '1'
-os.environ['MPLBACKEND'] = 'Agg'
+    # Import helper modules
+    from setup_python_env import setup_container_environment
+    from error_handler import PipelineErrorHandler
+    from validate_gpu_params import validate_gpu_configuration
 
-import scanpy as sc
-import pandas as pd
-import numpy as np
-import scvi
-import torch
-import sys
-import json
-import logging
-from pathlib import Path
-import warnings
+    # Setup environment
+    setup_container_environment()
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+    # Setup error handler
+    handler = PipelineErrorHandler('${task.process}', '${meta.id}')
+    handler.log_start()
 
-warnings.filterwarnings("ignore")
+    # Validate GPU configuration
+    gpu_config = validate_gpu_configuration()
+    print(f"Using GPU config: {gpu_config}")
 
-logger.info("=== Starting scVIVA Training ===")
+    # Main training function
+    def main_training():
+        import scanpy as sc
+        import pandas as pd
+        import numpy as np
+        import scvi
+        import torch
+        import json
+        import logging
+        from pathlib import Path
+        import warnings
+        import os
+        import tempfile
 
-try:
-    # Load the trained ResolVI data
-    logger.info("Loading ResolVI trained data...")
-    adata = sc.read_h5ad("${adata_trained}")
+        # Set up container-safe numba caching
+        if os.path.exists('/.singularity.d') or os.environ.get('SINGULARITY_CONTAINER'):
+            numba_cache = tempfile.mkdtemp(prefix='numba_cache_')
+            os.environ['NUMBA_CACHE_DIR'] = numba_cache
 
-    logger.info(f"Data shape: {adata.shape}")
-    logger.info(f"Available obs columns: {list(adata.obs.columns)}")
-    logger.info(f"Available obsm keys: {list(adata.obsm.keys())}")
-    logger.info(f"Available layers: {list(adata.layers.keys())}")
+        # Setup logging
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logger = logging.getLogger(__name__)
+        warnings.filterwarnings("ignore")
 
-    # Check if we have the required data
-    if 'resolvi_predicted' not in adata.obs.columns:
-        logger.error("'resolvi_predicted' column not found in adata.obs")
-        raise ValueError("Missing resolvi_predicted column")
+        logger.info("=== Starting scVIVA Training ===")
 
-    if 'X_spatial' not in adata.obsm.keys():
-        logger.warning("'X_spatial' not found in adata.obsm, checking alternatives...")
-        if 'spatial' in adata.obsm.keys():
-            adata.obsm['X_spatial'] = adata.obsm['spatial']
-            logger.info("Used 'spatial' coordinates as X_spatial")
-        else:
-            logger.error("No spatial coordinates found")
-            raise ValueError("Missing spatial coordinates")
+        # Load the trained ResolVI data
+        logger.info("Loading ResolVI trained data...")
+        adata = sc.read_h5ad("${adata_trained}")
 
-    # Use scVI for latent representation with spatial information
-    logger.info("Setting up spatial scVI analysis...")
+        logger.info(f"Data shape: {adata.shape}")
+        logger.info(f"Available obs columns: {list(adata.obs.columns)}")
 
-    scvi.model.SCVI.setup_anndata(
-        adata,
-        layer="counts" if "counts" in adata.layers else None,
-        labels_key="resolvi_predicted",
-        batch_key="batch" if "batch" in adata.obs.columns else None
-    )
+        # Check required data
+        if 'resolvi_predicted' not in adata.obs.columns:
+            raise ValueError("Missing resolvi_predicted column")
 
-    # Initialize scVI model
-    logger.info("Initializing scVI model...")
-    model = scvi.model.SCVI(
-        adata,
-        n_latent=10,
-        n_hidden=128,
-        n_layers=2,
-        dropout_rate=0.1
-    )
+        if 'X_spatial' not in adata.obsm.keys():
+            if 'spatial' in adata.obsm.keys():
+                adata.obsm['X_spatial'] = adata.obsm['spatial']
+                logger.info("Used 'spatial' coordinates as X_spatial")
+            else:
+                raise ValueError("Missing spatial coordinates")
 
-    # Train the model
-    logger.info(f"Training scVI model for ${scviva_max_epochs} epochs...")
-    model.train(
-        max_epochs=${scviva_max_epochs},
-        early_stopping=True,
-        early_stopping_patience=20,
-        check_val_every_n_epoch=10
-    )
+        # Setup scVI
+        logger.info("Setting up spatial scVI analysis...")
+        scvi.model.SCVI.setup_anndata(
+            adata,
+            layer="counts" if "counts" in adata.layers else None,
+            labels_key="resolvi_predicted",
+            batch_key="batch" if "batch" in adata.obs.columns else None
+        )
 
-    # Save the model
-    logger.info("Saving trained model...")
-    model.save("${prefix}_scviva_model", overwrite=True)
+        # Initialize model
+        logger.info("Initializing scVI model...")
+        model = scvi.model.SCVI(
+            adata,
+            n_latent=10,
+            n_hidden=128,
+            n_layers=2,
+            dropout_rate=0.1
+        )
 
-    # Get latent representation
-    logger.info("Computing latent representation...")
-    adata.obsm["X_scviva"] = model.get_latent_representation()
+        # Train model
+        logger.info(f"Training scVI model for ${scviva_max_epochs} epochs...")
+        model.train(
+            max_epochs=${scviva_max_epochs},
+            early_stopping=True,
+            early_stopping_patience=20,
+            check_val_every_n_epoch=10
+        )
 
-    # Compute UMAP on scVI latent space
-    logger.info("Computing UMAP on scVI latent space...")
-    try:
-        sc.pp.neighbors(adata, use_rep="X_scviva")
-        sc.tl.umap(adata)
-        logger.info("UMAP computation completed")
-    except Exception as e:
-        logger.warning(f"UMAP computation failed: {e}")
+        # Save model
+        logger.info("Saving trained model...")
+        model.save("${prefix}_scviva_model", overwrite=True)
 
-    # Save the processed data
-    logger.info("Saving processed data...")
-    output_file = f"${prefix}_scviva_trained.h5ad"
-    adata.write_h5ad(output_file)
+        # Get latent representation
+        logger.info("Computing latent representation...")
+        adata.obsm["X_scviva"] = model.get_latent_representation()
 
-    # Create training summary
-    summary = {
-        'success': True,
-        'method': 'scVI_spatial',
-        'cells': int(adata.n_obs),
-        'genes': int(adata.n_vars),
-        'cell_types': len(adata.obs['resolvi_predicted'].unique()),
-        'latent_dims': 10,
-        'epochs': ${scviva_max_epochs}
-    }
+        # Compute UMAP
+        logger.info("Computing UMAP on scVI latent space...")
+        try:
+            sc.pp.neighbors(adata, use_rep="X_scviva")
+            sc.tl.umap(adata)
+            logger.info("UMAP computation completed")
+        except Exception as e:
+            logger.warning(f"UMAP computation failed: {e}")
 
-    with open("${prefix}_training_summary.json", 'w') as f:
-        json.dump(summary, f, indent=2)
-
-    logger.info("=== scVIVA Training Completed Successfully ===")
-
-except Exception as e:
-    logger.error(f"scVIVA training failed: {e}")
-    import traceback
-    logger.error(f"Traceback: {traceback.format_exc()}")
-
-    # Create error outputs
-    os.makedirs("${prefix}_scviva_model", exist_ok=True)
-    with open("${prefix}_scviva_model/error.txt", 'w') as f:
-        f.write(f"Error: {str(e)}\\n")
-
-    # Create minimal output if adata exists
-    if 'adata' in locals():
-        adata.obs['scviva_error'] = str(e)
+        # Save processed data
+        logger.info("Saving processed data...")
         adata.write_h5ad("${prefix}_scviva_trained.h5ad")
 
-    summary = {'success': False, 'error': str(e)}
-    with open("${prefix}_training_summary.json", 'w') as f:
-        json.dump(summary, f, indent=2)
+        # Create summary
+        summary = {
+            'success': True,
+            'method': 'scVI_spatial',
+            'cells': int(adata.n_obs),
+            'genes': int(adata.n_vars),
+            'cell_types': len(adata.obs['resolvi_predicted'].unique()),
+            'latent_dims': 10,
+            'epochs': ${scviva_max_epochs}
+        }
 
-    raise e
+        with open("${prefix}_training_summary.json", 'w') as f:
+            json.dump(summary, f, indent=2)
 
-# Write versions
-with open("versions.yml", "w") as f:
-    f.write('"${task.process}":\\n')
-    f.write(f'    scvi-tools: {scvi.__version__}\\n')
-    f.write(f'    torch: {torch.__version__}\\n')
-    f.write(f'    scanpy: {sc.__version__}\\n')
-EOF
+        logger.info("=== scVIVA Training Completed Successfully ===")
+
+    # Execute with error handling
+    try:
+        main_training()
+        handler.log_completion()
+        handler.create_versions_file()
+    except Exception as e:
+        handler.handle_error(e, create_placeholder=True)
+
+        # Create error outputs
+        import os
+        os.makedirs("${prefix}_scviva_model", exist_ok=True)
+        with open("${prefix}_scviva_model/error.txt", 'w') as f:
+            f.write(f"Error: {str(e)}\\n")
+
+        # Create minimal output
+        try:
+            import scanpy as sc
+            adata = sc.read_h5ad("${adata_trained}")
+            adata.obs['scviva_error'] = str(e)
+            adata.write_h5ad("${prefix}_scviva_trained.h5ad")
+        except:
+            pass
+
+        summary = {'success': False, 'error': str(e)}
+        with open("${prefix}_training_summary.json", 'w') as f:
+            import json
+            json.dump(summary, f, indent=2)
+
+        raise
     """
 
     stub:

@@ -2,13 +2,13 @@ process RESOLVI_VISUALIZE {
     tag "$meta.id"
     label 'process_medium'
     
+    conda "${moduleDir}/../../environment.yml"
+
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
         'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
 
     containerOptions '--writable-tmpfs'
-
-    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
     
     input:
     tuple val(meta), path(adata)
@@ -28,11 +28,14 @@ process RESOLVI_VISUALIZE {
     """
     #!/usr/bin/env python3
 
-    # Disable numba caching to avoid container issues
-    import os
-    os.environ['NUMBA_CACHE_DIR'] = '/tmp'
-    os.environ['NUMBA_DISABLE_JIT'] = '1'
+    # Import shared environment setup
+    import sys
+    sys.path.insert(0, '${projectDir}/bin')
+    from setup_python_env import setup_container_environment
     
+    # Configure environment
+    is_container = setup_container_environment()
+
     import scanpy as sc
     import pandas as pd
     import numpy as np
@@ -42,6 +45,19 @@ process RESOLVI_VISUALIZE {
     import warnings
     import subprocess
     import sys
+    import os
+    import tempfile
+    from pathlib import Path
+    
+    # Set up container-safe numba caching
+    if os.path.exists('/.singularity.d') or os.environ.get('SINGULARITY_CONTAINER'):
+        # Inside Singularity - use writable temp location
+        numba_cache = tempfile.mkdtemp(prefix='numba_cache_')
+        os.environ['NUMBA_CACHE_DIR'] = numba_cache
+        # Keep JIT enabled but use safe cache location
+    else:
+        # Regular environment - use default caching
+        pass
     
     # Setup logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
