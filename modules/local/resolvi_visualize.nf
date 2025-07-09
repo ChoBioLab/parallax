@@ -8,7 +8,7 @@ process RESOLVI_VISUALIZE {
 
     containerOptions '--writable-tmpfs'
 
-    conda (params.enable_conda ? "bioconda::scanpy bioconda::scvi-tools" : null)
+    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
     
     input:
     tuple val(meta), path(adata)
