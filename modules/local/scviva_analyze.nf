@@ -2,16 +2,7 @@ process SCVIVA_ANALYZE {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/scviva", mode: 'copy'
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
-
-    containerOptions '--writable-tmpfs'
-
-    conda (params.enable_conda ? "bioconda::scanpy bioconda::scvi-tools" : null)
-
+    conda "/sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi"
 
     input:
     tuple val(meta), path(scviva_model_dir)
@@ -27,192 +18,196 @@ process SCVIVA_ANALYZE {
     task.ext.when == null || task.ext.when
 
     script:
-    def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
-    
     """
-    #!/usr/bin/env python3
+    #!/bin/bash
+    set -euo pipefail
 
-    # Disable numba caching to avoid container issues
-    import os
-    os.environ['NUMBA_CACHE_DIR'] = '/tmp'
-    os.environ['NUMBA_DISABLE_JIT'] = '1'
-    
-    import scanpy as sc
-    import pandas as pd
-    import numpy as np
-    import scvi
-    from pathlib import Path
-    import json
-    import sys
-    
-    print("Starting scVIVA analysis...")
-    
+    # Explicitly activate conda environment
+    source /hpc/users/tastac01/micromamba/etc/profile.d/conda.sh
+    conda activate /sc/arion/projects/untreatedIBD/ctastad/conda/envs/scvi
+
+    python << 'EOF'
+import os
+os.environ['NUMBA_CACHE_DIR'] = '/tmp'
+os.environ['NUMBA_DISABLE_JIT'] = '1'
+os.environ['MPLBACKEND'] = 'Agg'
+
+import scanpy as sc
+import pandas as pd
+import numpy as np
+import scvi
+import torch
+import sys
+import json
+import logging
+from pathlib import Path
+import warnings
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+warnings.filterwarnings("ignore")
+
+logger.info("=== Starting scVIVA Analysis ===")
+
+try:
     # Load the scVIVA trained data
-    print("Loading scVIVA trained data...")
+    logger.info("Loading scVIVA trained data...")
     adata = sc.read_h5ad("${adata_trained}")
-    
-    print(f"Data shape: {adata.shape}")
-    print(f"Available keys in adata.obs: {list(adata.obs.keys())}")
-    print(f"Available keys in adata.obsm: {list(adata.obsm.keys())}")
-    
+
+    logger.info(f"Data shape: {adata.shape}")
+    logger.info(f"Available obs columns: {list(adata.obs.columns)}")
+    logger.info(f"Available obsm keys: {list(adata.obsm.keys())}")
+
     # Check if we have the required data
     if 'resolvi_predicted' not in adata.obs.columns:
-        print("ERROR: 'resolvi_predicted' column not found in adata.obs")
-        sys.exit(1)
-    
-    try:
-        # Import scVIVA (assuming it's available in the container)
-        import scviva
-    
-        # Load the trained scVIVA model
-        print("Loading scVIVA model...")
-        model = scviva.model.SCVIVA.load("${scviva_model_dir}", adata)
-    
-        # Handle comparisons parameter
-        comparisons_input = "${scviva_comparisons}"
-        comparisons = []
-    
-        if comparisons_input and comparisons_input != "default_pairwise" and os.path.exists(comparisons_input):
-            print(f"Loading comparisons from: {comparisons_input}")
-            if comparisons_input.endswith('.json'):
-                with open(comparisons_input, 'r') as f:
-                    comparisons_data = json.load(f)
-                    if isinstance(comparisons_data, list):
-                        comparisons = comparisons_data
-                    elif 'comparisons' in comparisons_data:
-                        comparisons = comparisons_data['comparisons']
-            elif comparisons_input.endswith('.csv'):
-                comp_df = pd.read_csv(comparisons_input)
-                comparisons = [
-                    {
-                        'group1': row['group1'], 
-                        'group2': row['group2'],
-                        'covariate': row.get('covariate', None)
-                    } 
-                    for _, row in comp_df.iterrows()
-                ]
-        else:
-            # Generate default pairwise comparisons
-            print("Generating default pairwise comparisons...")
-            cell_types = adata.obs['resolvi_predicted'].unique()
-            for i, ct1 in enumerate(cell_types):
-                for ct2 in cell_types[i+1:]:
-                    comparisons.append({
-                        'group1': ct1,
-                        'group2': ct2,
-                        'covariate': None
-                    })
-    
-        print(f"Running {len(comparisons)} comparisons...")
+        logger.error("'resolvi_predicted' column not found in adata.obs")
+        raise ValueError("Missing resolvi_predicted column")
 
-        # Perform niche-aware differential expression analysis
-        de_results_list = []
+    # Load the trained scVI model
+    logger.info("Loading scVI model...")
+    model = scvi.model.SCVI.load("${scviva_model_dir}", adata)
 
-        for comp in comparisons:
-            print(f"Running comparison: {comp['group1']} vs {comp['group2']}")
+    # Handle comparisons parameter
+    comparisons_input = "${scviva_comparisons}"
+    comparisons = []
 
-            # Filter data for this comparison
-            mask = adata.obs['resolvi_predicted'].isin([comp['group1'], comp['group2']])
-            adata_sub = adata[mask].copy()
+    if comparisons_input and comparisons_input != "default_pairwise" and os.path.exists(comparisons_input):
+        logger.info(f"Loading comparisons from: {comparisons_input}")
+        if comparisons_input.endswith('.json'):
+            with open(comparisons_input, 'r') as f:
+                comparisons_data = json.load(f)
+                if isinstance(comparisons_data, list):
+                    comparisons = comparisons_data
+                elif 'comparisons' in comparisons_data:
+                    comparisons = comparisons_data['comparisons']
+        elif comparisons_input.endswith('.csv'):
+            comp_df = pd.read_csv(comparisons_input)
+            comparisons = [
+                {
+                    'group1': row['group1'],
+                    'group2': row['group2'],
+                    'covariate': row.get('covariate', None)
+                }
+                for _, row in comp_df.iterrows()
+            ]
+    else:
+        # Generate default pairwise comparisons
+        logger.info("Generating default pairwise comparisons...")
+        cell_types = adata.obs['resolvi_predicted'].unique()
+        cell_types = [ct for ct in cell_types if ct != 'error' and not pd.isna(ct)]
 
-            if adata_sub.n_obs == 0:
-                print(f"Warning: No cells found for comparison {comp['group1']} vs {comp['group2']}")
-                continue
-
-            # Run niche-aware DE analysis
-            try:
-                # This would be the actual scVIVA DE function
-                # de_res = model.differential_expression(
-                #     adata_sub,
-                #     groupby='resolvi_predicted',
-                #     group1=comp['group1'],
-                #     group2=comp['group2']
-                # )
-
-                # Placeholder DE analysis for now
-                print(f"Placeholder DE analysis for {comp['group1']} vs {comp['group2']}")
-
-                # Create placeholder results
-                n_genes = min(100, adata.n_vars)  # Top 100 genes or all genes
-                gene_names = adata.var_names[:n_genes]
-
-                np.random.seed(42)
-                de_res = pd.DataFrame({
-                    'gene': gene_names,
-                    'logfoldchanges': np.random.normal(0, 1, n_genes),
-                    'pvals': np.random.uniform(0, 1, n_genes),
-                    'pvals_adj': np.random.uniform(0, 1, n_genes),
-                    'comparison': f"{comp['group1']}_vs_{comp['group2']}",
-                    'group1': comp['group1'],
-                    'group2': comp['group2']
+        for i, ct1 in enumerate(cell_types):
+            for ct2 in cell_types[i+1:]:
+                comparisons.append({
+                    'group1': ct1,
+                    'group2': ct2,
+                    'covariate': None
                 })
 
-                de_results_list.append(de_res)
+    logger.info(f"Running {len(comparisons)} comparisons...")
 
-            except Exception as e:
-                print(f"Error in DE analysis for {comp['group1']} vs {comp['group2']}: {str(e)}")
+    # Perform differential expression analysis
+    de_results_list = []
+
+    for comp in comparisons:
+        logger.info(f"Running comparison: {comp['group1']} vs {comp['group2']}")
+
+        try:
+            # Create binary labels for this comparison
+            cell_type_mask = adata.obs['resolvi_predicted'].isin([comp['group1'], comp['group2']])
+
+            if cell_type_mask.sum() == 0:
+                logger.warning(f"No cells found for comparison {comp['group1']} vs {comp['group2']}")
                 continue
 
-        # Combine all DE results
-        if de_results_list:
-            all_de_results = pd.concat(de_results_list, ignore_index=True)
+            # Temporarily add comparison labels
+            adata.obs['temp_de_labels'] = 'other'
+            adata.obs.loc[adata.obs['resolvi_predicted'] == comp['group1'], 'temp_de_labels'] = comp['group1']
+            adata.obs.loc[adata.obs['resolvi_predicted'] == comp['group2'], 'temp_de_labels'] = comp['group2']
 
-            # Save DE results
-            de_output_file = f"${prefix}_scviva_de_results.csv"
-            all_de_results.to_csv(de_output_file, index=False)
-            print(f"DE results saved to: {de_output_file}")
-        else:
-            print("No DE results generated")
-            # Create empty results file
-            empty_df = pd.DataFrame(columns=['gene', 'logfoldchanges', 'pvals', 'pvals_adj', 'comparison', 'group1', 'group2'])
-            empty_df.to_csv(f"${prefix}_scviva_de_results.csv", index=False)
+            # Filter to only cells in this comparison
+            adata_sub = adata[cell_type_mask].copy()
 
-        # Save the results data
-        results_output_file = f"${prefix}_scviva_results.h5ad"
-        adata.write_h5ad(results_output_file)
-        print(f"Results data saved to: {results_output_file}")
+            if adata_sub.n_obs < 10:
+                logger.warning(f"Too few cells for comparison {comp['group1']} vs {comp['group2']} ({adata_sub.n_obs} cells)")
+                continue
 
-        print("scVIVA analysis completed successfully!")
+            # Perform DE analysis
+            de_df = model.differential_expression(
+                adata_sub,
+                groupby='temp_de_labels',
+                group1=comp['group1'],
+                group2=comp['group2'],
+                delta=0.25,
+                batch_size=None
+            )
 
-    except ImportError:
-        print("WARNING: scVIVA not available, creating placeholder results...")
+            # Add comparison information
+            de_df['comparison'] = f"{comp['group1']}_vs_{comp['group2']}"
+            de_df['group1'] = comp['group1']
+            de_df['group2'] = comp['group2']
+            de_df['gene'] = de_df.index
 
-        # Create placeholder DE results
-        empty_df = pd.DataFrame(columns=['gene', 'logfoldchanges', 'pvals', 'pvals_adj', 'comparison', 'group1', 'group2'])
-        empty_df.to_csv(f"${prefix}_scviva_de_results.csv", index=False)
+            de_results_list.append(de_df)
+            logger.info(f"Found {len(de_df)} DE genes for {comp['group1']} vs {comp['group2']}")
 
-        # Save the input data as results
-        results_output_file = f"${prefix}_scviva_results.h5ad"
-        adata.write_h5ad(results_output_file)
+        except Exception as e:
+            logger.warning(f"DE analysis failed for {comp['group1']} vs {comp['group2']}: {e}")
+            continue
 
-        print("Placeholder scVIVA analysis completed")
+    # Clean up temporary column
+    if 'temp_de_labels' in adata.obs.columns:
+        del adata.obs['temp_de_labels']
 
-    except Exception as e:
-        print(f"Error during scVIVA analysis: {str(e)}")
-        # Create empty results on error
-        empty_df = pd.DataFrame(columns=['gene', 'logfoldchanges', 'pvals', 'pvals_adj', 'comparison', 'group1', 'group2'])
-        empty_df.to_csv(f"${prefix}_scviva_de_results.csv", index=False)
+    # Combine all DE results
+    if de_results_list:
+        all_de_results = pd.concat(de_results_list, ignore_index=True)
 
-        results_output_file = f"${prefix}_scviva_results.h5ad"
-        adata.write_h5ad(results_output_file)
+        # Sort by significance and effect size
+        all_de_results = all_de_results.sort_values(['comparison', 'bayes_factor'], ascending=[True, False])
 
-        print("Error handling completed")
+        # Save DE results
+        de_output_file = f"${prefix}_scviva_de_results.csv"
+        all_de_results.to_csv(de_output_file, index=False)
+        logger.info(f"Saved {len(all_de_results)} DE results to {de_output_file}")
+    else:
+        logger.warning("No DE results generated - creating empty file")
+        empty_de = pd.DataFrame(columns=['gene', 'comparison', 'group1', 'group2', 'lfc_mean', 'lfc_std', 'bayes_factor', 'prob_de'])
+        empty_de.to_csv(f"${prefix}_scviva_de_results.csv", index=False)
 
-    # Create versions file
-    versions = {
-        'SCVIVA_ANALYZE': {
-            'python': sys.version.split()[0],
-            'scanpy': sc.__version__,
-            'scvi-tools': scvi.__version__,
-            'pandas': pd.__version__,
-            'numpy': np.__version__
-        }
-    }
+    # Save the results data
+    results_output_file = f"${prefix}_scviva_results.h5ad"
+    adata.write_h5ad(results_output_file)
+    logger.info(f"Results data saved to: {results_output_file}")
 
-    import yaml
-    with open('versions.yml', 'w') as f:
-        yaml.dump(versions, f)
+    logger.info("=== scVIVA Analysis Completed Successfully ===")
+
+except Exception as e:
+    logger.error(f"scVIVA analysis failed: {e}")
+    import traceback
+    logger.error(f"Traceback: {traceback.format_exc()}")
+
+    # Create empty DE results on error
+    empty_de = pd.DataFrame(columns=['gene', 'comparison', 'group1', 'group2', 'lfc_mean', 'lfc_std', 'bayes_factor', 'prob_de'])
+    empty_de.to_csv(f"${prefix}_scviva_de_results.csv", index=False)
+
+    # Create minimal results output
+    if 'adata' in locals():
+        adata.obs['analysis_error'] = str(e)
+        adata.write_h5ad(f"${prefix}_scviva_results.h5ad")
+
+    raise e
+
+# Write versions
+with open("versions.yml", "w") as f:
+    f.write('"${task.process}":\\n')
+    f.write(f'    scvi-tools: {scvi.__version__}\\n')
+    f.write(f'    torch: {torch.__version__}\\n')
+    f.write(f'    scanpy: {sc.__version__}\\n')
+EOF
     """
 
     stub:
