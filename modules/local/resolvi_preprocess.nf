@@ -8,7 +8,11 @@ process RESOLVI_PREPROCESS {
         'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
         'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
 
-    containerOptions '--writable-tmpfs'
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/scvi-tools:1.0.4--pyhdfd78af_0' :
+        'scverse/scvi-tools:1.0.4' }"
+
+    containerOptions { workflow.containerEngine == 'singularity' ? '--nv' : '--gpus all' }
 
     input:
     tuple val(meta), path(zarr_path)
