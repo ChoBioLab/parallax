@@ -214,18 +214,22 @@ log.info "-\033[2m--------------------------------------------------\033[0m-"
 */
 
 workflow {
-    // Create input channel from samplesheet with standardized meta
+    // Create input channel with enhanced validation
     ch_input = Channel
         .fromPath(params.input)
         .splitCsv(header: true)
         .map { row ->
-            // Standardize meta structure
+            // Validate required fields
+            if (!row.sample_id) error "Missing sample_id in row: ${row}"
+            if (!row.zarr_path) error "Missing zarr_path in row: ${row}"
+
             def std_meta = [
                 id: row.sample_id,
                 sample: row.sample_id,
                 condition: row.condition ?: 'unknown',
                 batch: row.batch ?: 'batch1',
-                single_cell: true
+                single_cell: true,
+                processing_stage: 'input'
             ]
             [std_meta, file(row.zarr_path, checkIfExists: true)]
         }
@@ -233,32 +237,39 @@ workflow {
     ch_versions = Channel.empty()
     ch_multiqc_files = Channel.empty()
 
-    // GPU availability check (run once if GPUs requested)
+    // GPU availability check
     if (params.num_gpus && params.num_gpus > 0) {
         CHECK_GPU_AVAILABILITY()
         ch_versions = ch_versions.mix(CHECK_GPU_AVAILABILITY.out.versions)
     }
 
-    // Input validation
+    // Input validation with error handling
     if (params.validate_inputs) {
         VALIDATE_INPUTS(ch_input)
         ch_validated_input = VALIDATE_INPUTS.out.validated
+            .map { meta, zarr_path ->
+                meta.processing_stage = 'validated'
+                [meta, zarr_path]
+            }
         ch_versions = ch_versions.mix(VALIDATE_INPUTS.out.versions.first())
         ch_multiqc_files = ch_multiqc_files.mix(VALIDATE_INPUTS.out.report.collect())
     } else {
         ch_validated_input = ch_input
     }
 
-    // MODULE: Run preprocessing
-    RESOLVI_PREPROCESS (
+    // Preprocessing
+    RESOLVI_PREPROCESS(
         ch_validated_input,
         params.annotation_label
     )
     ch_versions = ch_versions.mix(RESOLVI_PREPROCESS.out.versions.first())
 
-    // MODULE: Train ResolVI model
-    RESOLVI_TRAIN (
-        RESOLVI_PREPROCESS.out.adata,
+    // Training
+    RESOLVI_TRAIN(
+        RESOLVI_PREPROCESS.out.adata.map { meta, adata ->
+            meta.processing_stage = 'preprocessed'
+            [meta, adata]
+        },
         params.annotation_label,
         params.max_epochs,
         params.num_samples,
@@ -266,64 +277,114 @@ workflow {
     )
     ch_versions = ch_versions.mix(RESOLVI_TRAIN.out.versions.first())
 
-    // Safe channel joining using ChannelUtils
-    ch_resolvi_combined = ChannelUtils.validateAndJoin(
-        RESOLVI_TRAIN.out.model,
-        RESOLVI_TRAIN.out.adata,
-        0  // join by first element (meta)
-    ).map { meta, model_dir, adata -> 
-        // Additional validation
-        if (!model_dir || !adata) {
-            error "Missing outputs for sample ${meta.id}: model=${model_dir}, adata=${adata}"
+    // Safe channel joining for ResolVI analysis
+    ch_resolvi_combined = ChannelUtils.safeJoin(
+        RESOLVI_TRAIN.out.model.map { meta, model ->
+            meta.processing_stage = 'model_trained'
+            [meta, model]
+        },
+        RESOLVI_TRAIN.out.adata.map { meta, adata ->
+            meta.processing_stage = 'training_complete'
+            [meta, adata]
         }
+    )
+    .map { meta, model_dir, adata -> 
+        // Comprehensive validation
+        if (!model_dir) {
+            error "Missing model directory for sample ${meta.id}"
+        }
+        if (!adata) {
+            error "Missing adata file for sample ${meta.id}"
+        }
+        if (!file(model_dir).exists()) {
+            error "Model directory does not exist: ${model_dir}"
+        }
+        if (!file(adata).exists()) {
+            error "AnnData file does not exist: ${adata}"
+        }
+
+        meta.processing_stage = 'ready_for_analysis'
         [meta, model_dir, adata] 
     }
 
-    RESOLVI_ANALYZE (
+    // ResolVI Analysis
+    RESOLVI_ANALYZE(
         ch_resolvi_combined,
         params.da_comparisons ?: "default_pairwise"
     )
     ch_versions = ch_versions.mix(RESOLVI_ANALYZE.out.versions.first())
 
-    // Safe channel joining for SCVIVA
-    ch_scviva_combined = ChannelUtils.validateAndJoin(
-        RESOLVI_TRAIN.out.model,
-        RESOLVI_TRAIN.out.adata,
-        0
-    ).map { meta, model_dir, adata ->
+    // Safe channel preparation for scVIVA
+    ch_scviva_model = RESOLVI_TRAIN.out.model.map { meta, model ->
+        meta.processing_stage = 'scviva_model_prep'
+        [meta, model]
+    }
+
+    ch_scviva_adata = RESOLVI_TRAIN.out.adata.map { meta, adata ->
+        meta.processing_stage = 'scviva_adata_prep'
+        [meta, adata]
+    }
+
+    // Synchronized join for scVIVA to prevent race conditions
+    ch_scviva_combined = ChannelUtils.synchronizedJoin([
+        ch_scviva_model,
+        ch_scviva_adata
+    ])
+    .map { meta, model_dir, adata ->
+        // Validation
         if (!model_dir || !adata) {
-            error "Missing SCVIVA inputs for sample ${meta.id}: model=${model_dir}, adata=${adata}"
+            error "Missing scVIVA inputs for sample ${meta.id}: model=${model_dir}, adata=${adata}"
         }
+
+        meta.processing_stage = 'scviva_ready'
         [meta, model_dir, adata]
     }
 
-    SCVIVA_TRAIN (
-        ch_scviva_combined.map { meta, model_dir, adata -> [meta, model_dir] },
-        ch_scviva_combined.map { meta, model_dir, adata -> [meta, adata] },
+    // Split channels for scVIVA training
+    ch_scviva_model_only = ch_scviva_combined.map { meta, model_dir, adata -> 
+        [meta, model_dir] 
+    }
+    ch_scviva_adata_only = ch_scviva_combined.map { meta, model_dir, adata -> 
+        [meta, adata] 
+    }
+
+    // scVIVA Training
+    SCVIVA_TRAIN(
+        ch_scviva_model_only,
+        ch_scviva_adata_only,
         params.scviva_max_epochs,
         params.num_gpus
     )
     ch_versions = ch_versions.mix(SCVIVA_TRAIN.out.versions.first())
 
-    SCVIVA_ANALYZE (
+    // Safe join for scVIVA analysis
+    ch_scviva_analysis = ChannelUtils.safeJoin(
         SCVIVA_TRAIN.out.model_dir,
-        SCVIVA_TRAIN.out.adata_trained,
+        SCVIVA_TRAIN.out.adata_trained
+    )
+
+    SCVIVA_ANALYZE(
+        ch_scviva_analysis,
         params.scviva_comparisons ?: "default_pairwise"
     )
     ch_versions = ch_versions.mix(SCVIVA_ANALYZE.out.versions.first())
 
-    RESOLVI_VISUALIZE (
+    // Visualization
+    RESOLVI_VISUALIZE(
         RESOLVI_TRAIN.out.adata,
         params.marker_genes
     )
     ch_versions = ch_versions.mix(RESOLVI_VISUALIZE.out.versions.first())
 
-    // Collect MultiQC inputs
-    ch_multiqc_files = ch_multiqc_files.mix(ch_versions.unique().collectFile(name: 'collated_versions.yml'))
+    // Collect MultiQC inputs safely
+    ch_multiqc_files = ch_multiqc_files.mix(
+        ChannelUtils.collectWithValidation(ch_versions.unique())
+            .collectFile(name: 'collated_versions.yml')
+    )
 
     // MultiQC
     if (!params.skip_multiqc) {
-        MULTIQC (
+        MULTIQC(
             ch_multiqc_files.collect(),
             Channel.fromPath(params.multiqc_config ?: [], checkIfExists: true).toList(),
             Channel.fromPath(params.multiqc_logo ?: [], checkIfExists: true).toList(),

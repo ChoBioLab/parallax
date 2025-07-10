@@ -1,5 +1,4 @@
 ---
-# environment.yml
 name: nf-core-resolvinf
 channels: [conda-forge, bioconda, pytorch, nvidia]
 dependencies:
@@ -7,13 +6,18 @@ dependencies:
   - python=3.11
   - pip
 
-  # Updated core dependencies
-  - scvi-tools=1.3.2
-  - spatialdata=0.4.0
-  - scanpy=1.10.1
-  - anndata=0.10.3
+  # GPU-enabled PyTorch (required)
+  - pytorch=2.0.1
+  - pytorch-cuda=11.8
+  - cudatoolkit=11.8
+  - cuda-toolkit=11.8
 
-  # Scientific computing
+  # GPU-accelerated scientific computing
+  - cupy=12.2.0
+  - cudf=23.08
+  - cuml=23.08
+
+  # Core dependencies optimized for GPU
   - numpy=1.24.3
   - scipy=1.11.1
   - pandas=2.0.3
@@ -24,25 +28,26 @@ dependencies:
   - seaborn=0.12.2
   - plotly=5.15.0
 
-  # GPU support
-  - pytorch=2.0.1
-  - pytorch-cuda=11.8
-  - cudatoolkit=11.8
-
-  # Spatial analysis
-  - squidpy=1.3.0
-  - spatialdata-io=0.2.0
-
-  # Utilities
+  # Essential utilities
   - zarr=2.16.1
   - h5py=3.9.0
   - tqdm=4.65.0
   - pyyaml=6.0
+  - requests=2.31.0
 
   # Development tools
   - pytest=7.4.0
   - black=23.7.0
   - flake8=6.0.0
 
-  # Pip dependencies for latest versions
-  - pip: [scvi-tools==1.3.2, spatialdata==0.4.0, multiqc==1.15]
+  # Pip dependencies for GPU-optimized packages
+  - pip:
+      - scvi-tools==1.3.2
+      - spatialdata==0.4.0
+      - spatialdata-io==0.2.0
+      - squidpy==1.3.0
+      - multiqc==1.15
+      - rapids-singlecell==0.9.3
+      - torch-geometric==2.3.1
+      - torch-scatter==2.1.1
+      - torch-sparse==0.6.17

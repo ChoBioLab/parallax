@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
-  "$id": "https://raw.githubusercontent.com/nf-core/resolvinf/master/nextflow_schema.json",
+  "$id": "https://raw.githubusercontent.com/ChoBioLab/nf-core-resolvinf/master/nextflow_schema.json",
   "title": "nf-core/resolvinf pipeline parameters",
-  "description": "A Nextflow implementation of ResolVI for spatial transcriptomics data analysis",
+  "description": "A Nextflow implementation of ResolVI and scVIVA for spatial transcriptomics data analysis",
   "type": "object",
   "definitions": {
     "input_output_options": {
@@ -20,7 +20,7 @@
           "mimetype": "text/csv",
           "pattern": "^\\S+\\.csv$",
           "description": "Path to comma-separated file containing information about the samples in the experiment.",
-          "help_text": "You will need to create a design file with information about the samples in your experiment before running the pipeline. Use this parameter to specify its location. It has to be a comma-separated file with 3 columns, and a header row. See [usage docs](https://nf-co.re/resolvinf/usage#samplesheet-input).",
+          "help_text": "You will need to create a design file with information about the samples in your experiment before running the pipeline. Use this parameter to specify its location. It has to be a comma-separated file with 3 columns, and a header row.",
           "fa_icon": "fas fa-file-csv"
         },
         "outdir": {
@@ -37,6 +37,12 @@
       "fa_icon": "fas fa-cogs",
       "description": "Options for ResolVI model training and analysis",
       "properties": {
+        "annotation_label": {
+          "type": "string",
+          "default": "cell_type",
+          "description": "Column name to use for cell type annotation",
+          "fa_icon": "fas fa-tag"
+        },
         "marker_genes": {
           "type": "string",
           "description": "Path to file containing marker genes (one per line) or comma-separated list",
@@ -58,10 +64,97 @@
           "description": "Number of posterior samples for uncertainty quantification",
           "fa_icon": "fas fa-random"
         },
+        "da_comparisons": {
+          "type": "string",
+          "format": "file-path",
+          "description": "JSON or CSV file specifying differential abundance comparisons",
+          "fa_icon": "fas fa-balance-scale"
+        }
+      }
+    },
+    "scviva_options": {
+      "title": "scVIVA Options",
+      "type": "object",
+      "fa_icon": "fas fa-project-diagram",
+      "description": "Options for scVIVA niche-aware analysis",
+      "properties": {
+        "scviva_max_epochs": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Maximum number of training epochs for scVIVA model",
+          "fa_icon": "fas fa-clock"
+        },
+        "scviva_comparisons": {
+          "type": "string",
+          "format": "file-path",
+          "description": "JSON or CSV file specifying scVIVA niche-aware DE comparisons",
+          "fa_icon": "fas fa-network-wired"
+        }
+      }
+    },
+    "gpu_options": {
+      "title": "GPU Configuration",
+      "type": "object",
+      "fa_icon": "fas fa-microchip",
+      "description": "GPU configuration options for model training",
+      "properties": {
         "num_gpus": {
           "type": "integer",
+          "default": 0,
+          "minimum": -1,
+          "maximum": 8,
           "description": "Number of GPUs to use for training. 0 for CPU-only, -1 for all available GPUs",
           "fa_icon": "fas fa-microchip"
+        },
+        "max_gpus_per_process": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Maximum number of GPUs per process",
+          "fa_icon": "fas fa-microchip"
+        },
+        "gpu_memory_fraction": {
+          "type": "number",
+          "default": 0.8,
+          "minimum": 0.1,
+          "maximum": 1.0,
+          "description": "Fraction of GPU memory to use",
+          "fa_icon": "fas fa-memory"
+        },
+        "force_cpu": {
+          "type": "boolean",
+          "default": false,
+          "description": "Force CPU-only execution even if GPUs are available",
+          "fa_icon": "fas fa-ban"
+        },
+        "validate_gpu_availability": {
+          "type": "boolean",
+          "default": true,
+          "description": "Validate GPU availability before starting",
+          "fa_icon": "fas fa-check-circle"
+        }
+      }
+    },
+    "validation_options": {
+      "title": "Validation Options",
+      "type": "object",
+      "fa_icon": "fas fa-check-square",
+      "description": "Input validation and quality control options",
+      "properties": {
+        "validate_inputs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Validate input files before processing",
+          "fa_icon": "fas fa-check"
+        },
+        "skip_multiqc": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip MultiQC report generation",
+          "fa_icon": "fas fa-forward"
         }
       }
     },
@@ -84,7 +177,7 @@
           "description": "Base directory for Institutional configs.",
           "default": "https://raw.githubusercontent.com/nf-core/configs/master",
           "hidden": true,
-          "help_text": "If you're running offline, Nextflow will not be able to fetch the institutional config files from the internet. If you don't need them, then this is not a problem. If you do need them, you should download the files from the repo and tell Nextflow where to find them with this parameter.",
+          "help_text": "If you're running offline, Nextflow will not be able to fetch the institutional config files from the internet. If you don't need them, you should download the files from the repo and tell Nextflow where to find them with this parameter.",
           "fa_icon": "fas fa-users-cog"
         },
         "config_profile_name": {
@@ -118,7 +211,7 @@
       "type": "object",
       "fa_icon": "fab fa-acquisitions-incorporated",
       "description": "Set the top limit for requested resources for any single job.",
-      "help_text": "If you are running on a smaller system, a pipeline step requesting more resources than are available may cause the Nextflow to stop the run with an error. These options allow you to cap the maximum resources requested by any single job so that the pipeline will run on your system.\n\nNote that you can not _increase_ the resources requested by any job using these options. For that you will need your own configuration file. See [the nf-core website](https://nf-co.re/usage/configuration) for details.",
+      "help_text": "If you are running on a smaller system, a pipeline step requesting more resources than are available may cause the Nextflow to stop the run with an error. These options allow you to cap the maximum resources requested by any single job so that the pipeline will run on your system.",
       "properties": {
         "max_cpus": {
           "type": "integer",
@@ -153,7 +246,7 @@
       "type": "object",
       "fa_icon": "fas fa-file-import",
       "description": "Less common options for the pipeline, typically set in a config file.",
-      "help_text": "These options are common to all nf-core pipelines and allow you to customise some of the core preferences for how the pipeline runs.\n\nTypically these options would be set in a Nextflow config file loaded for all pipeline runs, such as `~/.nextflow/config`.",
+      "help_text": "These options are common to all nf-core pipelines and allow you to customise some of the core preferences for how the pipeline runs.",
       "properties": {
         "help": {
           "type": "boolean",
@@ -171,7 +264,7 @@
           "type": "string",
           "default": "copy",
           "description": "Method used to save pipeline results to output directory.",
-          "help_text": "The Nextflow `publishDir` option specifies which intermediate files should be saved to the output directory. This option tells the pipeline what method should be used to move these files. See [Nextflow docs](https://www.nextflow.io/docs/latest/process.html#publishdir) for details.",
+          "help_text": "The Nextflow `publishDir` option specifies which intermediate files should be saved to the output directory. This option tells the pipeline what method should be used to move these files.",
           "fa_icon": "fas fa-copy",
           "enum": [
             "symlink",
@@ -181,6 +274,14 @@
             "copyNoFollow",
             "move"
           ],
+          "hidden": true
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address for completion summary.",
+          "fa_icon": "fas fa-envelope",
+          "help_text": "Set this parameter to your e-mail address to get a summary e-mail with details of the run sent to you when the workflow exits.",
+          "pattern": "^([a-zA-Z0-9_\\-\\.]+)@([a-zA-Z0-9_\\-\\.]+)\\.([a-zA-Z]{2,5})$",
           "hidden": true
         },
         "email_on_fail": {
@@ -231,6 +332,12 @@
           "fa_icon": "fas fa-image",
           "hidden": true
         },
+        "multiqc_title": {
+          "type": "string",
+          "description": "Custom title for the MultiQC report.",
+          "fa_icon": "fas fa-file-alt",
+          "hidden": true
+        },
         "multiqc_methods_description": {
           "type": "string",
           "description": "Custom MultiQC yaml file containing HTML including a methods description.",
@@ -255,12 +362,12 @@
           "fa_icon": "far fa-check-circle",
           "description": "Validation of parameters fails when an unrecognised parameter is found.",
           "hidden": true,
-          "help_text": "By default, when an unrecognised parameter is found, it returns a warinig."
+          "help_text": "By default, when an unrecognised parameter is found, it returns a warning."
         },
         "validationLenientMode": {
           "type": "boolean",
           "fa_icon": "far fa-check-circle",
-          "description": "Validation of parameters in lenient more.",
+          "description": "Validation of parameters in lenient mode.",
           "hidden": true,
           "help_text": "Allows string values that are parseable as numbers or booleans. For further information see [JSONSchema docs](https://github.com/everit-org/json-schema#lenient-mode)."
         }
@@ -273,6 +380,15 @@
     },
     {
       "$ref": "#/definitions/resolvi_options"
+    },
+    {
+      "$ref": "#/definitions/scviva_options"
+    },
+    {
+      "$ref": "#/definitions/gpu_options"
+    },
+    {
+      "$ref": "#/definitions/validation_options"
     },
     {
       "$ref": "#/definitions/institutional_config_options"
