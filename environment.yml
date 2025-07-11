@@ -1,53 +1,25 @@
----
 name: nf-core-resolvinf
-channels: [conda-forge, bioconda, pytorch, nvidia]
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+  - nvidia
 dependencies:
   # Core Python
   - python=3.11
   - pip
 
-  # GPU-enabled PyTorch (required)
-  - pytorch=2.0.1
-  - pytorch-cuda=11.8
-  - cudatoolkit=11.8
-  - cuda-toolkit=11.8
-
-  # GPU-accelerated scientific computing
-  - cupy=12.2.0
-  - cudf=23.08
-  - cuml=23.08
-
-  # Core dependencies optimized for GPU
-  - numpy=1.24.3
-  - scipy=1.11.1
-  - pandas=2.0.3
-  - scikit-learn=1.3.0
-
   # Visualization
-  - matplotlib=3.7.1
-  - seaborn=0.12.2
-  - plotly=5.15.0
+  - matplotlib
+  - seaborn
 
   # Essential utilities
-  - zarr=2.16.1
-  - h5py=3.9.0
-  - tqdm=4.65.0
-  - pyyaml=6.0
-  - requests=2.31.0
+  - pyyaml
+  - requests
 
-  # Development tools
-  - pytest=7.4.0
-  - black=23.7.0
-  - flake8=6.0.0
-
-  # Pip dependencies for GPU-optimized packages
+  # Pip dependencies
   - pip:
       - scvi-tools==1.3.2
       - spatialdata==0.4.0
       - spatialdata-io==0.2.0
-      - squidpy==1.3.0
       - multiqc==1.15
-      - rapids-singlecell==0.9.3
-      - torch-geometric==2.3.1
-      - torch-scatter==2.1.1
-      - torch-sparse==0.6.17

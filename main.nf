@@ -244,7 +244,7 @@ workflow {
     // scVIVA Analysis
     ch_scviva_analysis = SCVIVA_TRAIN.out.model_dir
         .join(SCVIVA_TRAIN.out.adata_trained, by: 0)
-
+    
     SCVIVA_ANALYZE(
         ch_scviva_analysis,
         params.scviva_comparisons ?: "default_pairwise"
@@ -265,20 +265,26 @@ workflow {
 
     // MultiQC
     if (!params.skip_multiqc) {
+        // Handle optional MultiQC config files
+        ch_multiqc_config = params.multiqc_config ? 
+            Channel.fromPath(params.multiqc_config, checkIfExists: true) : 
+            Channel.empty()
+    
+        ch_multiqc_logo = params.multiqc_logo ? 
+            Channel.fromPath(params.multiqc_logo, checkIfExists: true) : 
+            Channel.empty()
+    
         MULTIQC(
             ch_multiqc_files.collect(),
-            Channel.fromPath(params.multiqc_config ?: [], checkIfExists: true).toList(),
-            Channel.fromPath(params.multiqc_logo ?: [], checkIfExists: true).toList(),
-            Channel.empty().toList(),
-            Channel.empty().toList(),
-            Channel.empty().toList()
+            ch_multiqc_config.collect(),
+            ch_multiqc_logo.collect(),
+            Channel.empty(),
+            Channel.empty(),
+            Channel.empty()
         )
         ch_versions = ch_versions.mix(MULTIQC.out.versions)
     }
 
-    emit:
-    versions = ch_versions
-    multiqc_report = params.skip_multiqc ? Channel.empty() : MULTIQC.out.report
 }
 
 /*

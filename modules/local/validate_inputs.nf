@@ -2,11 +2,7 @@ process VALIDATE_INPUTS {
     tag "$meta.id"
     label 'process_single'
 
-    conda "${moduleDir}/environment.yml"
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/scanpy:1.9.6--pyhdfd78af_0' :
-        'scverse/scanpy:1.9.6' }"
+    conda "${projectDir}/environment.yml"
 
     input:
     tuple val(meta), path(zarr_path)
@@ -20,16 +16,13 @@ process VALIDATE_INPUTS {
     task.ext.when == null || task.ext.when
 
     script:
-    def args = task.ext.args ?: ''
-    def prefix = task.ext.prefix ?: "${meta.id}"
     """
     #!/usr/bin/env python3
     import sys
     import json
-    import os
     from pathlib import Path
 
-    def validate_zarr_input(zarr_path, meta):
+    def validate_spatialdata_input(zarr_path, meta):
         validation_results = {
             'sample_id': meta.get('id', 'unknown'),
             'zarr_path': str(zarr_path),
@@ -39,76 +32,64 @@ process VALIDATE_INPUTS {
         }
 
         try:
-            # Check if zarr package is available
-            try:
-                import zarr
-                import pandas as pd
-            except ImportError as e:
-                validation_results['errors'].append(f"Required package not available: {str(e)}")
+            import spatialdata as sd
+            import anndata as ad
+        except ImportError as e:
+            validation_results['errors'].append(f"Required package not available: {str(e)}")
+            validation_results['valid'] = False
+            return validation_results
+
+        # Check if path exists
+        zarr_file = Path(zarr_path)
+        if not zarr_file.exists():
+            validation_results['errors'].append(f"Zarr file does not exist: {zarr_path}")
+            validation_results['valid'] = False
+            return validation_results
+
+        try:
+            # Load SpatialData object
+            sdata = sd.read_zarr(str(zarr_file))
+
+            # Check if there's a table
+            if not hasattr(sdata, 'tables') or len(sdata.tables) == 0:
+                validation_results['errors'].append("No tables found in SpatialData object")
                 validation_results['valid'] = False
                 return validation_results
 
-            # Check if path exists
-            zarr_file = Path(zarr_path)
-            if not zarr_file.exists():
-                validation_results['errors'].append(f"Zarr file does not exist: {zarr_path}")
+            # Get the main table (usually 'table')
+            table_key = 'table' if 'table' in sdata.tables else list(sdata.tables.keys())[0]
+            adata = sdata.tables[table_key]
+
+            # Validate AnnData structure
+            if adata.X is None:
+                validation_results['errors'].append("Expression matrix (X) is None")
                 validation_results['valid'] = False
-                return validation_results
-
-            # Try to open zarr store
-            try:
-                store = zarr.open(str(zarr_file), mode='r')
-            except Exception as e:
-                validation_results['errors'].append(f"Cannot open zarr file: {str(e)}")
+            if adata.obs is None or len(adata.obs) == 0:
+                validation_results['errors'].append("Cell metadata (obs) is empty")
                 validation_results['valid'] = False
-                return validation_results
+            if adata.var is None or len(adata.var) == 0:
+                validation_results['errors'].append("Gene metadata (var) is empty")
+                validation_results['valid'] = False
 
-            # Check required groups
-            required_groups = ['X', 'obs', 'var']
-            for group in required_groups:
-                if group not in store:
-                    validation_results['errors'].append(f"Missing required group: {group}")
-                    validation_results['valid'] = False
-
-            if not validation_results['valid']:
-                return validation_results
-
-            # Validate dimensions
-            try:
-                n_obs = store['X'].shape[0]
-                n_vars = store['X'].shape[1]
-
-                if 'obs' in store and hasattr(store['obs'], '__len__'):
-                    obs_len = len(store['obs'])
-                    if n_obs != obs_len:
-                        validation_results['errors'].append(f"Dimension mismatch: X has {n_obs} observations but obs has {obs_len}")
-                        validation_results['valid'] = False
-
-                if 'var' in store and hasattr(store['var'], '__len__'):
-                    var_len = len(store['var'])
-                    if n_vars != var_len:
-                        validation_results['errors'].append(f"Dimension mismatch: X has {n_vars} variables but var has {var_len}")
-                        validation_results['valid'] = False
-
-                # Add warnings for low counts
-                if n_obs < 100:
-                    validation_results['warnings'].append(f"Low cell count: {n_obs} cells")
-
-                if n_vars < 1000:
-                    validation_results['warnings'].append(f"Low gene count: {n_vars} genes")
+            if validation_results['valid']:
+                # Get basic stats
+                n_obs, n_vars = adata.shape
 
                 validation_results['stats'] = {
                     'n_obs': n_obs,
                     'n_vars': n_vars,
-                    'has_spatial': 'spatial' in store
+                    'table_key': table_key,
+                    'has_spatial_info': len(sdata.shapes) > 0 or len(sdata.points) > 0
                 }
 
-            except Exception as e:
-                validation_results['errors'].append(f"Error validating dimensions: {str(e)}")
-                validation_results['valid'] = False
+                # Add warnings for low counts
+                if n_obs < 100:
+                    validation_results['warnings'].append(f"Low cell count: {n_obs} cells")
+                if n_vars < 100:
+                    validation_results['warnings'].append(f"Low gene count: {n_vars} genes")
 
         except Exception as e:
-            validation_results['errors'].append(f"Unexpected error during validation: {str(e)}")
+            validation_results['errors'].append(f"Error reading SpatialData: {str(e)}")
             validation_results['valid'] = False
 
         return validation_results
@@ -124,7 +105,7 @@ process VALIDATE_INPUTS {
     zarr_path = "${zarr_path}"
 
     # Run validation
-    results = validate_zarr_input(zarr_path, meta)
+    results = validate_spatialdata_input(zarr_path, meta)
 
     # Write results
     with open('validation_report.json', 'w') as f:
@@ -133,10 +114,15 @@ process VALIDATE_INPUTS {
     # Print results
     if results['valid']:
         print(f"✓ Validation passed for {results['sample_id']}")
+        if 'stats' in results:
+            stats = results['stats']
+            print(f"  Table: {stats['table_key']}")
+            print(f"  Cells: {stats['n_obs']}, Genes: {stats['n_vars']}")
+            print(f"  Has spatial info: {stats['has_spatial_info']}")
         if results['warnings']:
-            print("Warnings:")
+            print("  Warnings:")
             for warning in results['warnings']:
-                print(f"  - {warning}")
+                print(f"    - {warning}")
     else:
         print(f"✗ Validation failed for {results['sample_id']}")
         for error in results['errors']:
@@ -145,19 +131,15 @@ process VALIDATE_INPUTS {
 
     # Create versions file
     python_version = sys.version.split()[0]
-
     try:
-        import zarr
-        zarr_version = zarr.__version__
+        import spatialdata as sd
+        sd_version = sd.__version__
     except:
-        zarr_version = "unknown"
-
-    versions_content = f'''"{task.process}":
-    python: "{python_version}"
-    zarr: "{zarr_version}"
-'''
+        sd_version = "unknown"
 
     with open('versions.yml', 'w') as f:
-        f.write(versions_content)
+        f.write('"${task.process}":\\n')
+        f.write(f'    python: "{python_version}"\\n')
+        f.write(f'    spatialdata: "{sd_version}"\\n')
     """
 }

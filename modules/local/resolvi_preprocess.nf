@@ -2,15 +2,7 @@ process RESOLVI_PREPROCESS {
     tag "$meta.id"
     label 'process_medium'
 
-    conda "${moduleDir}/../../environment.yml"
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/scvi-tools:1.0.4--pyhdfd78af_0' :
-        'scverse/scvi-tools:1.0.4' }"
+    conda "${projectDir}/environment.yml"
 
     containerOptions { workflow.containerEngine == 'singularity' ? '--nv' : '--gpus all' }
 
@@ -33,11 +25,7 @@ process RESOLVI_PREPROCESS {
     # Import shared environment setup
     import sys
     sys.path.insert(0, '${projectDir}/bin')
-    from setup_python_env import setup_container_environment
     
-    # Configure environment
-    is_container = setup_container_environment()
-
     import spatialdata as sd
     import scanpy as sc
     import pandas as pd

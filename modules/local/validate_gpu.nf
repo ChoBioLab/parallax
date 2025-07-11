@@ -2,9 +2,7 @@ process VALIDATE_GPU {
     tag "gpu_check"
     label 'process_gpu'
 
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/pytorch:2.1.0--py3.11_cuda12.1_cudnn8.9.2_0' :
-        'pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime' }"
+    conda "${projectDir}/environment.yml"
 
     containerOptions { workflow.containerEngine == 'singularity' ? '--nv' : '--gpus all' }
 

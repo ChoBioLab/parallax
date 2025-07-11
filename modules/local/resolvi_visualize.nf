@@ -2,11 +2,7 @@ process RESOLVI_VISUALIZE {
     tag "$meta.id"
     label 'process_medium'
     
-    conda "${moduleDir}/../../environment.yml"
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
+    conda "${projectDir}/environment.yml"
 
     containerOptions '--writable-tmpfs'
     
@@ -31,10 +27,6 @@ process RESOLVI_VISUALIZE {
     # Import shared environment setup
     import sys
     sys.path.insert(0, '${projectDir}/bin')
-    from setup_python_env import setup_container_environment
-    
-    # Configure environment
-    is_container = setup_container_environment()
 
     import scanpy as sc
     import pandas as pd

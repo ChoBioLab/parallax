@@ -2,9 +2,6 @@ process ERROR_HANDLER {
     tag "$meta.id"
     label 'process_single'
 
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/python:3.11--slim' :
-        'python:3.11-slim' }"
 
     publishDir "${params.outdir}/errors", mode: params.publish_dir_mode
 

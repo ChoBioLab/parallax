@@ -2,11 +2,7 @@ process SCVIVA_TRAIN {
     tag "$meta.id"
     label 'process_gpu'
 
-    conda "${moduleDir}/../../environment.yml"
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' :
-        'ghcr.io/scverse/scvi-tools:py3.12-cu12-1.3.2-dev' }"
+    conda "${projectDir}/environment.yml"
 
     containerOptions '--writable-tmpfs'
 
@@ -44,7 +40,7 @@ process SCVIVA_TRAIN {
     import tempfile
 
     # Simple GPU setup based on mode
-    if ${gpu_mode}:
+    if ${gpu_mode ? 'True' : 'False'}:
         if not torch.cuda.is_available():
             print("ERROR: GPU mode requested but CUDA not available")
             print("Use -profile cpu to force CPU mode")
@@ -64,7 +60,7 @@ process SCVIVA_TRAIN {
 
     # Setup logging
     logging.basicConfig(
-        level=logging.INFO, 
+        level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler('${prefix}_scviva_log.txt'),
@@ -120,7 +116,6 @@ process SCVIVA_TRAIN {
         logger.info(f"Training scVI model for ${scviva_max_epochs} epochs...")
         model.train(
             max_epochs=${scviva_max_epochs},
-            use_gpu=use_gpu,
             early_stopping=True,
             early_stopping_patience=20,
             check_val_every_n_epoch=10
@@ -184,7 +179,7 @@ process SCVIVA_TRAIN {
                 f.write("")
 
         summary = {
-            'success': False, 
+            'success': False,
             'error': str(e),
             'device': device if 'device' in locals() else 'unknown',
             'gpu_mode': use_gpu if 'use_gpu' in locals() else False
@@ -195,14 +190,14 @@ process SCVIVA_TRAIN {
         raise
 
     # Create versions file
-    versions_content = f'''"{task.process}":
-    python: "{sys.version.split()[0]}"
-    scanpy: "{sc.__version__}"
-    scvi-tools: "{scvi.__version__}"
-    pytorch: "{torch.__version__}"
-    device: "{device}"
-    gpu_mode: "{use_gpu}"
-'''
+    versions_content = f'''"${task.process}":
+        python: "{sys.version.split()[0]}"
+        scanpy: "{sc.__version__}"
+        scvi-tools: "{scvi.__version__}"
+        pytorch: "{torch.__version__}"
+        device: "{device}"
+        gpu_mode: "{use_gpu}"
+    '''
 
     with open('versions.yml', 'w') as f:
         f.write(versions_content)

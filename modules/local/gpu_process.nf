@@ -2,10 +2,7 @@ process GPU_PROCESS {
     tag "$meta.id"
     label 'process_gpu'
 
-    conda "${moduleDir}/environment.yml"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/pytorch:2.0.1--py3.11_cuda11.8_cudnn8.7.0_0' :
-        'pytorch/pytorch:2.0.1-cuda11.8-cudnn8-runtime' }"
+    conda "${projectDir}/environment.yml"
 
     input:
     tuple val(meta), path(input_file)

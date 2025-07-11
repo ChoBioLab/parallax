@@ -2,11 +2,7 @@ process RESOLVI_TRAIN {
     tag "$meta.id"
     label 'process_gpu'
 
-    conda "${moduleDir}/../../environment.yml"
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/scvi-tools:1.0.4--pyhdfd78af_0' :
-        'scverse/scvi-tools:1.0.4' }"
+    conda "${projectDir}/environment.yml"
 
     input:
     tuple val(meta), path(adata)
@@ -28,7 +24,6 @@ process RESOLVI_TRAIN {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     #!/usr/bin/env python3
-
     import sys
     import scanpy as sc
     import scvi
@@ -43,7 +38,7 @@ process RESOLVI_TRAIN {
     from pathlib import Path
 
     # Simple GPU setup based on mode
-    if ${gpu_mode}:
+    if ${gpu_mode ? 'True' : 'False'}:
         if not torch.cuda.is_available():
             print("ERROR: GPU mode requested but CUDA not available")
             print("Use -profile cpu to force CPU mode")
@@ -102,8 +97,8 @@ process RESOLVI_TRAIN {
 
         logger.info("Setting up ResolVI...")
         scvi.external.RESOLVI.setup_anndata(
-            adata, 
-            layer="counts", 
+            adata,
+            layer="counts",
             labels_key="${annotation_label}"
         )
 
@@ -116,7 +111,6 @@ process RESOLVI_TRAIN {
         try:
             model.train(
                 max_epochs=${max_epochs},
-                use_gpu=use_gpu,
                 early_stopping=True,
                 early_stopping_patience=10,
                 early_stopping_monitor="elbo_train"
@@ -124,7 +118,7 @@ process RESOLVI_TRAIN {
             logger.info("Model training completed successfully with early stopping")
         except Exception as e:
             logger.warning(f"Training with early stopping failed: {e}")
-            model.train(max_epochs=${max_epochs}, use_gpu=use_gpu)
+            model.train(max_epochs=${max_epochs})
             logger.info("Model training completed without early stopping")
 
         # Save model
@@ -233,7 +227,7 @@ process RESOLVI_TRAIN {
                 f.write("")
 
         summary = {
-            'success': False, 
+            'success': False,
             'error': str(e),
             'device': device if 'device' in locals() else 'unknown',
             'gpu_mode': use_gpu if 'use_gpu' in locals() else False
@@ -244,15 +238,15 @@ process RESOLVI_TRAIN {
         raise
 
     # Create versions file
-    versions_content = f'''"{task.process}":
-    python: "{sys.version.split()[0]}"
-    scanpy: "{sc.__version__}"
-    scvi-tools: "{scvi.__version__}"
-    pytorch: "{torch.__version__}"
-    device: "{device}"
-    gpu_mode: "{use_gpu}"
-'''
-
+    versions_content = f'''"${task.process}":
+        python: "{sys.version.split()[0]}"
+        scanpy: "{sc.__version__}"
+        scvi-tools: "{scvi.__version__}"
+        pytorch: "{torch.__version__}"
+        device: "{device}"
+        gpu_mode: "{use_gpu}"
+    '''
+    
     with open('versions.yml', 'w') as f:
         f.write(versions_content)
     """
