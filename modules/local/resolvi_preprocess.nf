@@ -21,11 +21,11 @@ process RESOLVI_PREPROCESS {
     def prefix = task.ext.prefix ?: "${meta.id}"
     """
     #!/usr/bin/env python3
-
+    
     # Import shared environment setup
     import sys
     sys.path.insert(0, '${projectDir}/bin')
-    
+
     import spatialdata as sd
     import scanpy as sc
     import pandas as pd
@@ -38,7 +38,8 @@ process RESOLVI_PREPROCESS {
     import os
     import tempfile
     from pathlib import Path
-    
+    import re
+
     # Set up container-safe numba caching
     if os.path.exists('/.singularity.d') or os.environ.get('SINGULARITY_CONTAINER'):
         # Inside Singularity - use writable temp location
@@ -56,8 +57,66 @@ process RESOLVI_PREPROCESS {
     # Suppress warnings
     warnings.filterwarnings("ignore")
     
-    logger.info("=== Starting ResolVI Preprocessing ===")
+    def sanitize_h5_keys(adata):
+        '''Replace forward slashes in AnnData keys and DataFrame columns with underscores'''
     
+        # Sanitize obsm keys and DataFrame columns within obsm
+        if hasattr(adata, 'obsm') and adata.obsm is not None:
+            obsm_dict = dict(adata.obsm)
+            for old_key in list(obsm_dict.keys()):
+                new_key = re.sub(r'/', '_', old_key)
+                if new_key != old_key:
+                    logger.info(f"Sanitizing obsm key: '{old_key}' -> '{new_key}'")
+                    obsm_dict[new_key] = obsm_dict.pop(old_key)
+    
+                # Check if the value is a DataFrame and sanitize column names
+                if hasattr(obsm_dict[new_key], 'columns'):
+                    df = obsm_dict[new_key]
+                    new_columns = [re.sub(r'/', '_', str(col)) for col in df.columns]
+                    if list(new_columns) != list(df.columns):
+                        logger.info(f"Sanitizing columns in obsm['{new_key}']: {list(df.columns)} -> {new_columns}")
+                        df.columns = new_columns
+                        obsm_dict[new_key] = df
+    
+            adata.obsm = obsm_dict
+    
+        # Sanitize varm keys and DataFrame columns within varm
+        if hasattr(adata, 'varm') and adata.varm is not None:
+            varm_dict = dict(adata.varm)
+            for old_key in list(varm_dict.keys()):
+                new_key = re.sub(r'/', '_', old_key)
+                if new_key != old_key:
+                    logger.info(f"Sanitizing varm key: '{old_key}' -> '{new_key}'")
+                    varm_dict[new_key] = varm_dict.pop(old_key)
+    
+                # Check if the value is a DataFrame and sanitize column names
+                if hasattr(varm_dict[new_key], 'columns'):
+                    df = varm_dict[new_key]
+                    new_columns = [re.sub(r'/', '_', str(col)) for col in df.columns]
+                    if list(new_columns) != list(df.columns):
+                        logger.info(f"Sanitizing columns in varm['{new_key}']: {list(df.columns)} -> {new_columns}")
+                        df.columns = new_columns
+                        varm_dict[new_key] = df
+    
+            adata.varm = varm_dict
+    
+        # Sanitize obs and var column names
+        if hasattr(adata, 'obs') and adata.obs is not None:
+            new_obs_columns = [re.sub(r'/', '_', str(col)) for col in adata.obs.columns]
+            if list(new_obs_columns) != list(adata.obs.columns):
+                logger.info(f"Sanitizing obs columns: {list(adata.obs.columns)} -> {new_obs_columns}")
+                adata.obs.columns = new_obs_columns
+    
+        if hasattr(adata, 'var') and adata.var is not None:
+            new_var_columns = [re.sub(r'/', '_', str(col)) for col in adata.var.columns]
+            if list(new_var_columns) != list(adata.var.columns):
+                logger.info(f"Sanitizing var columns: {list(adata.var.columns)} -> {new_var_columns}")
+                adata.var.columns = new_var_columns
+    
+        return adata
+
+    logger.info("=== Starting ResolVI Preprocessing ===")
+
     # Define the annotation label to use
     annotation_label = "${annotation_label}"
     logger.info(f"Using annotation label: '{annotation_label}'")
@@ -262,6 +321,10 @@ process RESOLVI_PREPROCESS {
         # Save preprocessed data
         output_file = "${prefix}_preprocessed.h5ad"
         logger.info(f"Saving preprocessed data to: {output_file}")
+    
+        # Sanitize keys before saving
+        adata = sanitize_h5_keys(adata)
+    
         adata.write_h5ad(output_file)
     
         logger.info("=== ResolVI Preprocessing Completed Successfully ===")
