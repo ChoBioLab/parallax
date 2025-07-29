@@ -1,43 +1,43 @@
-# nf-core/resolvinf: Usage
+# nf-core/parallax: Usage
 
 ## Table of contents
 
-* [Table of contents](#table-of-contents)
-* [Introduction](#introduction)
-* [Running the pipeline](#running-the-pipeline)
-  * [Updating the pipeline](#updating-the-pipeline)
-  * [Reproducibility](#reproducibility)
-* [Main arguments](#main-arguments)
-  * [`-profile`](#-profile)
-  * [`--reads`](#--reads)
-  * [`--single_end`](#--single_end)
-* [Reference genomes](#reference-genomes)
-  * [`--genome` (using iGenomes)](#--genome-using-igenomes)
-  * [`--fasta`](#--fasta)
-  * [`--igenomes_ignore`](#--igenomes_ignore)
-* [Job resources](#job-resources)
-  * [Automatic resubmission](#automatic-resubmission)
-  * [Custom resource requests](#custom-resource-requests)
-* [AWS Batch specific parameters](#aws-batch-specific-parameters)
-  * [`--awsqueue`](#--awsqueue)
-  * [`--awsregion`](#--awsregion)
-  * [`--awscli`](#--awscli)
-* [Other command line parameters](#other-command-line-parameters)
-  * [`--outdir`](#--outdir)
-  * [`--email`](#--email)
-  * [`--email_on_fail`](#--email_on_fail)
-  * [`--max_multiqc_email_size`](#--max_multiqc_email_size)
-  * [`-name`](#-name)
-  * [`-resume`](#-resume)
-  * [`-c`](#-c)
-  * [`--custom_config_version`](#--custom_config_version)
-  * [`--custom_config_base`](#--custom_config_base)
-  * [`--max_memory`](#--max_memory)
-  * [`--max_time`](#--max_time)
-  * [`--max_cpus`](#--max_cpus)
-  * [`--plaintext_email`](#--plaintext_email)
-  * [`--monochrome_logs`](#--monochrome_logs)
-  * [`--multiqc_config`](#--multiqc_config)
+- [Table of contents](#table-of-contents)
+- [Introduction](#introduction)
+- [Running the pipeline](#running-the-pipeline)
+  - [Updating the pipeline](#updating-the-pipeline)
+  - [Reproducibility](#reproducibility)
+- [Main arguments](#main-arguments)
+  - [`-profile`](#-profile)
+  - [`--reads`](#--reads)
+  - [`--single_end`](#--single_end)
+- [Reference genomes](#reference-genomes)
+  - [`--genome` (using iGenomes)](#--genome-using-igenomes)
+  - [`--fasta`](#--fasta)
+  - [`--igenomes_ignore`](#--igenomes_ignore)
+- [Job resources](#job-resources)
+  - [Automatic resubmission](#automatic-resubmission)
+  - [Custom resource requests](#custom-resource-requests)
+- [AWS Batch specific parameters](#aws-batch-specific-parameters)
+  - [`--awsqueue`](#--awsqueue)
+  - [`--awsregion`](#--awsregion)
+  - [`--awscli`](#--awscli)
+- [Other command line parameters](#other-command-line-parameters)
+  - [`--outdir`](#--outdir)
+  - [`--email`](#--email)
+  - [`--email_on_fail`](#--email_on_fail)
+  - [`--max_multiqc_email_size`](#--max_multiqc_email_size)
+  - [`-name`](#-name)
+  - [`-resume`](#-resume)
+  - [`-c`](#-c)
+  - [`--custom_config_version`](#--custom_config_version)
+  - [`--custom_config_base`](#--custom_config_base)
+  - [`--max_memory`](#--max_memory)
+  - [`--max_time`](#--max_time)
+  - [`--max_cpus`](#--max_cpus)
+  - [`--plaintext_email`](#--plaintext_email)
+  - [`--monochrome_logs`](#--monochrome_logs)
+  - [`--multiqc_config`](#--multiqc_config)
 
 ## Introduction
 
@@ -56,7 +56,7 @@ NXF_OPTS='-Xms1g -Xmx4g'
 The typical command for running the pipeline is as follows:
 
 ```bash
-nextflow run nf-core/resolvinf --reads '*_R{1,2}.fastq.gz' -profile docker
+nextflow run nf-core/parallax --reads '*_R{1,2}.fastq.gz' -profile docker
 ```
 
 This will launch the pipeline with the `docker` configuration profile. See below for more information about profiles.
@@ -75,14 +75,14 @@ results         # Finished results (configurable, see below)
 When you run the above command, Nextflow automatically pulls the pipeline code from GitHub and stores it as a cached version. When running the pipeline after this, it will always use the cached version if available - even if the pipeline has been updated since. To make sure that you're running the latest version of the pipeline, make sure that you regularly update the cached version of the pipeline:
 
 ```bash
-nextflow pull nf-core/resolvinf
+nextflow pull nf-core/parallax
 ```
 
 ### Reproducibility
 
 It's a good idea to specify a pipeline version when running the pipeline on your data. This ensures that a specific version of the pipeline code and software are used when you run your pipeline. If you keep using the same tag, you'll be running the same version of the pipeline, even if there have been changes to the code since.
 
-First, go to the [nf-core/resolvinf releases page](https://github.com/nf-core/resolvinf/releases) and find the latest version number - numeric only (eg. `1.3.1`). Then specify this when running the pipeline with `-r` (one hyphen) - eg. `-r 1.3.1`.
+First, go to the [nf-core/parallax releases page](https://github.com/nf-core/parallax/releases) and find the latest version number - numeric only (eg. `1.3.1`). Then specify this when running the pipeline with `-r` (one hyphen) - eg. `-r 1.3.1`.
 
 This version number will be logged in reports when you run the pipeline, so that you'll know what you used when you look back in the future.
 
@@ -103,19 +103,19 @@ They are loaded in sequence, so later profiles can overwrite earlier profiles.
 
 If `-profile` is not specified, the pipeline will run locally and expect all software to be installed and available on the `PATH`. This is _not_ recommended.
 
-* `docker`
-  * A generic configuration profile to be used with [Docker](http://docker.com/)
-  * Pulls software from dockerhub: [`nfcore/resolvinf`](http://hub.docker.com/r/nfcore/resolvinf/)
-* `singularity`
-  * A generic configuration profile to be used with [Singularity](http://singularity.lbl.gov/)
-  * Pulls software from DockerHub: [`nfcore/resolvinf`](http://hub.docker.com/r/nfcore/resolvinf/)
-* `conda`
-  * Please only use Conda as a last resort i.e. when it's not possible to run the pipeline with Docker or Singularity.
-  * A generic configuration profile to be used with [Conda](https://conda.io/docs/)
-  * Pulls most software from [Bioconda](https://bioconda.github.io/)
-* `test`
-  * A profile with a complete configuration for automated testing
-  * Includes links to test data so needs no other parameters
+- `docker`
+  - A generic configuration profile to be used with [Docker](http://docker.com/)
+  - Pulls software from dockerhub: [`nfcore/parallax`](http://hub.docker.com/r/nfcore/parallax/)
+- `singularity`
+  - A generic configuration profile to be used with [Singularity](http://singularity.lbl.gov/)
+  - Pulls software from DockerHub: [`nfcore/parallax`](http://hub.docker.com/r/nfcore/parallax/)
+- `conda`
+  - Please only use Conda as a last resort i.e. when it's not possible to run the pipeline with Docker or Singularity.
+  - A generic configuration profile to be used with [Conda](https://conda.io/docs/)
+  - Pulls most software from [Bioconda](https://bioconda.github.io/)
+- `test`
+  - A profile with a complete configuration for automated testing
+  - Includes links to test data so needs no other parameters
 
 <!-- TODO nf-core: Document required command line parameters -->
 
@@ -155,14 +155,14 @@ There are 31 different species supported in the iGenomes references. To run the 
 
 You can find the keys to specify the genomes in the [iGenomes config file](../conf/igenomes.config). Common genomes that are supported are:
 
-* Human
-  * `--genome GRCh37`
-* Mouse
-  * `--genome GRCm38`
-* _Drosophila_
-  * `--genome BDGP6`
-* _S. cerevisiae_
-  * `--genome 'R64-1-1'`
+- Human
+  - `--genome GRCh37`
+- Mouse
+  - `--genome GRCm38`
+- _Drosophila_
+  - `--genome BDGP6`
+- _S. cerevisiae_
+  - `--genome 'R64-1-1'`
 
 > There are numerous others - check the config file for more.
 

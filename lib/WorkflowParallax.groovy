@@ -1,11 +1,7 @@
-//
-// This file holds several functions specific to the workflow/resolvinf.nf in the nf-core/resolvinf pipeline
-//
-
 import nextflow.Nextflow
 import groovy.json.JsonSlurper
 
-class WorkflowResolvinf {
+class WorkflowParallax {
 
     //
     // Check and validate parameters

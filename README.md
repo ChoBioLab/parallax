@@ -1,17 +1,17 @@
-# ![nf-core/resolvinf](docs/images/nf-core-resolvinf_logo.png)
+# ![nf-core/parallax](docs/images/nf-core-parallax_logo.png)
 
 **A Nextflow implementation of ResolVI and scVIVA for comprehensive spatial transcriptomics analysis**.
 
-[![GitHub Actions CI Status](https://github.com/nf-core/resolvinf/workflows/nf-core%20CI/badge.svg)](https://github.com/nf-core/resolvinf/actions)
-[![GitHub Actions Linting Status](https://github.com/nf-core/resolvinf/workflows/nf-core%20linting/badge.svg)](https://github.com/nf-core/resolvinf/actions)
+[![GitHub Actions CI Status](https://github.com/nf-core/parallax/workflows/nf-core%20CI/badge.svg)](https://github.com/nf-core/parallax/actions)
+[![GitHub Actions Linting Status](https://github.com/nf-core/parallax/workflows/nf-core%20linting/badge.svg)](https://github.com/nf-core/parallax/actions)
 [![Nextflow](https://img.shields.io/badge/nextflow-%E2%89%A523.04.0-brightgreen.svg)](https://www.nextflow.io/)
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg)](http://bioconda.github.io/)
-[![Docker](https://img.shields.io/docker/automated/nfcore/resolvinf.svg)](https://hub.docker.com/r/nfcore/resolvinf)
+[![Docker](https://img.shields.io/docker/automated/nfcore/parallax.svg)](https://hub.docker.com/r/nfcore/parallax)
 
 ## Introduction
 
-**nf-core/resolvinf** is a comprehensive bioinformatics pipeline that integrates **ResolVI** (Resolution of Variational Inference) and **scVIVA** (single-cell Variational Inference for Variational Analysis) for advanced spatial transcriptomics data analysis. This dual-method approach provides state-of-the-art noise correction, cell type prediction, and niche-aware differential expression analysis.
+**nf-core/parallax** is a comprehensive bioinformatics pipeline that integrates **ResolVI** (Resolution of Variational Inference) and **scVIVA** (single-cell Variational Inference for Variational Analysis) for advanced spatial transcriptomics data analysis. This dual-method approach provides state-of-the-art noise correction, cell type prediction, and niche-aware differential expression analysis.
 
 ### Key Technologies
 
@@ -59,7 +59,7 @@ This parallel architecture maximizes computational efficiency while providing co
 3. Download the pipeline and test it on a minimal dataset with a single command:
 
    ```bash
-   nextflow run nf-core/resolvinf -profile test,docker --outdir <OUTDIR>
+   nextflow run nf-core/parallax -profile test,docker --outdir <OUTDIR>
    ```
 
    Note that some form of configuration will be needed so that Nextflow knows how to fetch the required software. This is usually done in the form of a config profile (`YOURPROFILE` in the example command above). You can chain multiple config profiles in a comma-separated string.
@@ -72,7 +72,7 @@ This parallel architecture maximizes computational efficiency while providing co
 4. Start running your own analysis!
 
    ```bash
-   nextflow run nf-core/resolvinf --input samplesheet.csv --outdir <OUTDIR> -profile <docker/singularity/podman/shifter/charliecloud/conda/institute>
+   nextflow run nf-core/parallax --input samplesheet.csv --outdir <OUTDIR> -profile <docker/singularity/podman/shifter/charliecloud/conda/institute>
    ```
 
 ## Input Requirements
@@ -154,6 +154,7 @@ The scVIVA workflow supports flexible condition specifications for niche-aware d
 ### Condition Types
 
 #### 1. **Cell Type Comparisons** (Simple)
+
 Compare different cell types without specific conditions:
 
 ```json
@@ -167,6 +168,7 @@ Compare different cell types without specific conditions:
 ```
 
 #### 2. **Treatment/Disease Conditions**
+
 Compare the same cell type across different treatments or disease states:
 
 ```json
@@ -183,6 +185,7 @@ Compare the same cell type across different treatments or disease states:
 ```
 
 #### 3. **Spatial Region Conditions**
+
 Compare cell types or conditions across different spatial regions:
 
 ```json
@@ -199,6 +202,7 @@ Compare cell types or conditions across different spatial regions:
 ```
 
 #### 4. **Sample-Based Conditions**
+
 Map specific samples to conditions when metadata isn't directly encoded:
 
 ```json
@@ -217,6 +221,7 @@ Map specific samples to conditions when metadata isn't directly encoded:
 ```
 
 #### 5. **Cross-Condition Cell Type Comparisons**
+
 Compare different cell types across different conditions:
 
 ```json
@@ -236,37 +241,40 @@ Compare different cell types across different conditions:
 
 The pipeline automatically detects and establishes conditions using the following priority order:
 
-1. **Explicit condition column**: Uses the column specified in ```condition_column```
-2. **Sample mapping**: Creates conditions from ```samples_condition1``` and ```samples_condition2``` lists
-3. **Spatial regions**: Uses ```spatial_region``` column if available
-4. **Common metadata columns**: Automatically detects ```treatment```, ```tissue_type```, etc.
-5. **Sample ID fallback**: Uses ```sample_id``` as conditions if no other method works
+1. **Explicit condition column**: Uses the column specified in `condition_column`
+2. **Sample mapping**: Creates conditions from `samples_condition1` and `samples_condition2` lists
+3. **Spatial regions**: Uses `spatial_region` column if available
+4. **Common metadata columns**: Automatically detects `treatment`, `tissue_type`, etc.
+5. **Sample ID fallback**: Uses `sample_id` as conditions if no other method works
 
 ### Required Data Preparation
 
 Ensure your AnnData objects contain the necessary metadata:
 
 #### Essential Columns
-- **Cell type predictions**: ```resolvi_predicted``` (automatically generated by ResolVI)
-- **Sample information**: ```sample_id``` (automatically added during preprocessing)
+
+- **Cell type predictions**: `resolvi_predicted` (automatically generated by ResolVI)
+- **Sample information**: `sample_id` (automatically added during preprocessing)
 
 #### Optional Condition Columns
-- ```condition```: General condition labels
-- ```treatment```: Treatment/control labels  
-- ```tissue_type```: Tissue or disease state labels
-- ```spatial_region```: Spatial region annotations
-- ```timepoint```: Temporal conditions
+
+- `condition`: General condition labels
+- `treatment`: Treatment/control labels
+- `tissue_type`: Tissue or disease state labels
+- `spatial_region`: Spatial region annotations
+- `timepoint`: Temporal conditions
 - Custom condition columns as specified in your comparisons
 
 ### File Formats
 
 #### JSON Format (Recommended)
+
 ```json
 [
   {
     "name": "comparison_name",
     "group1": "Cell_Type_1",
-    "group2": "Cell_Type_2", 
+    "group2": "Cell_Type_2",
     "condition1": "condition_A",
     "condition2": "condition_B",
     "condition_column": "metadata_column",
@@ -277,6 +285,7 @@ Ensure your AnnData objects contain the necessary metadata:
 ```
 
 #### CSV Format
+
 ```csv
 name,group1,group2,condition1,condition2,condition_column
 tcells_vs_bcells,T cells,B cells,,,
@@ -286,16 +295,18 @@ treated_vs_control_tcells,T cells,T cells,treated,control,treatment
 ### Usage Examples
 
 #### Basic cell type comparison:
+
 ```bash
-nextflow run nf-core/resolvinf \
+nextflow run nf-core/parallax \
   --input samplesheet.csv \
   --scviva_comparisons simple_comparisons.json \
   --outdir results
 ```
 
 #### Complex condition-based analysis:
+
 ```bash
-nextflow run nf-core/resolvinf \
+nextflow run nf-core/parallax \
   --input samplesheet.csv \
   --scviva_comparisons complex_comparisons.json \
   --annotation_label cell_type \
@@ -313,17 +324,19 @@ nextflow run nf-core/resolvinf \
 ### Troubleshooting
 
 #### Common Issues:
+
 - **"Cannot establish conditions"**: Check that specified condition columns exist in your data
 - **"Insufficient cells"**: Reduce the number of comparisons or combine similar conditions
-- **"Sample not found"**: Verify sample IDs in ```samples_condition1/2``` match your data exactly
+- **"Sample not found"**: Verify sample IDs in `samples_condition1/2` match your data exactly
 
 #### Debug Information:
+
 The pipeline logs detailed information about:
+
 - Available metadata columns
 - Condition establishment methods used
 - Cell counts for each comparison group
 - Success/failure status for each comparison
-
 
 ## Key Parameters
 
@@ -419,7 +432,7 @@ Ensure your execution environment has appropriate GPU drivers and CUDA support w
 
 ## Documentation
 
-The nf-core/resolvinf pipeline comes with documentation about the pipeline:
+The nf-core/parallax pipeline comes with documentation about the pipeline:
 
 1. [Installation](https://nf-co.re/usage/installation)
 2. Pipeline configuration
@@ -460,7 +473,7 @@ The combination of ResolVI and scVIVA provides:
 
 ## Credits
 
-nf-core/resolvinf was originally written by Christopher Tastad.
+nf-core/parallax was originally written by Christopher Tastad.
 
 We thank the following people for their extensive assistance in the development of this pipeline:
 
@@ -473,16 +486,16 @@ We thank the following people for their extensive assistance in the development 
 
 If you would like to contribute to this pipeline, please see the [contributing guidelines](.github/CONTRIBUTING.md).
 
-For further information or help, don't hesitate to get in touch on the [Slack `#resolvinf` channel](https://nfcore.slack.com/channels/resolvinf) (you can join with [this invite](https://nf-co.re/join/slack)).
+For further information or help, don't hesitate to get in touch on the [Slack `#parallax` channel](https://nfcore.slack.com/channels/parallax) (you can join with [this invite](https://nf-co.re/join/slack)).
 
 ## Citations
 
-If you use nf-core/resolvinf for your analysis, please cite:
+If you use nf-core/parallax for your analysis, please cite:
 
 ### Pipeline
 
 <!-- TODO: Add DOI after first release -->
-<!-- > **nf-core/resolvinf: A Nextflow implementation of ResolVI and scVIVA for comprehensive spatial transcriptomics analysis**
+<!-- > **nf-core/parallax: A Nextflow implementation of ResolVI and scVIVA for comprehensive spatial transcriptomics analysis**
 >
 > Christopher Tastad et al.
 >

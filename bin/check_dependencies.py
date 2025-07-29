@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Robust dependency checker for nf-core/resolvinf pipeline
+Robust dependency checker for nf-core/parallax pipeline
 Handles container environments and provides detailed diagnostics
 """
 
@@ -146,7 +146,7 @@ class DependencyChecker:
 
     def check_all_dependencies(self) -> bool:
         """Check all required and optional dependencies"""
-        print("🔍 Checking dependencies for nf-core/resolvinf...")
+        print("🔍 Checking dependencies for nf-core/parallax...")
 
         # Check required packages
         all_satisfied = True
@@ -249,7 +249,7 @@ def main():
     """Main execution function"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Check nf-core/resolvinf dependencies")
+    parser = argparse.ArgumentParser(description="Check nf-core/parallax dependencies")
     parser.add_argument(
         "--output-dir", default=".", help="Output directory for results"
     )
@@ -257,7 +257,7 @@ def main():
     args = parser.parse_args()
 
     if not args.quiet:
-        print("🧬 nf-core/resolvinf Dependency Checker")
+        print("🧬 nf-core/parallax Dependency Checker")
         print("=" * 50)
 
     checker = DependencyChecker(args.output_dir)

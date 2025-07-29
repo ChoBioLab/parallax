@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive Python environment setup for nf-core/resolvinf pipeline
+Comprehensive Python environment setup for nf-core/parallax pipeline
 Handles container environments, GPU configuration, and performance optimization
 """
 
@@ -198,7 +198,7 @@ class EnvironmentSetup:
     def apply_all_configurations(self):
         """Apply all environment configurations"""
         print(
-            "🔧 Setting up Python environment for nf-core/resolvinf...", file=sys.stderr
+            "🔧 Setting up Python environment for nf-core/parallax...", file=sys.stderr
         )
 
         self.setup_numba_config()
@@ -236,7 +236,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Setup Python environment for nf-core/resolvinf"
+        description="Setup Python environment for nf-core/parallax"
     )
     parser.add_argument("--output-config", help="Save configuration to JSON file")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")

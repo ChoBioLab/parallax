@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive module wrapper for nf-core/resolvinf pipeline
+Comprehensive module wrapper for nf-core/parallax pipeline
 Provides standardized logging, error handling, and resource monitoring
 """
 
@@ -54,7 +54,7 @@ class ModuleWrapper:
         )
 
         # Setup logger
-        self.logger = logging.getLogger(f"nf-core.resolvinf.{self.module_name}")
+        self.logger = logging.getLogger(f"nf-core.parallax.{self.module_name}")
         self.logger.setLevel(logging.INFO)
 
         # Clear any existing handlers
@@ -370,7 +370,7 @@ def main():
     """Main execution for testing"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Module wrapper for nf-core/resolvinf")
+    parser = argparse.ArgumentParser(description="Module wrapper for nf-core/parallax")
     parser.add_argument("--module", required=True, help="Module name")
     parser.add_argument("--sample", required=True, help="Sample ID")
     parser.add_argument("--output-dir", default=".", help="Output directory")

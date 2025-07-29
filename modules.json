@@ -1,6 +1,6 @@
 {
-  "name": "nf-core/resolvinf",
-  "homePage": "https://github.com/nf-core/resolvinf",
+  "name": "nf-core/parallax",
+  "homePage": "https://github.com/nf-core/parallax",
   "repos": {
     "https://github.com/nf-core/modules.git": {
       "modules": {

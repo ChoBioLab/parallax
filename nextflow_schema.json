@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
-  "$id": "https://raw.githubusercontent.com/ChoBioLab/nf-core-resolvinf/master/nextflow_schema.json",
-  "title": "nf-core/resolvinf pipeline parameters",
+  "$id": "https://raw.githubusercontent.com/ChoBioLab/parallax/master/nextflow_schema.json",
+  "title": "nf-core/parallax pipeline parameters",
   "description": "A Nextflow implementation of ResolVI and scVIVA for spatial transcriptomics data analysis",
   "type": "object",
   "definitions": {

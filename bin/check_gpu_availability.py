@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive GPU availability checker for nf-core/resolvinf
+Comprehensive GPU availability checker for nf-core/parallax
 Handles multiple container environments and provides detailed diagnostics
 """
 
@@ -293,7 +293,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Check GPU availability for nf-core/resolvinf"
+        description="Check GPU availability for nf-core/parallax"
     )
     parser.add_argument(
         "--output-dir", default=".", help="Output directory for results"
@@ -302,7 +302,7 @@ def main():
     args = parser.parse_args()
 
     if not args.quiet:
-        print("🎮 nf-core/resolvinf GPU Checker", file=sys.stderr)
+        print("🎮 nf-core/parallax GPU Checker", file=sys.stderr)
         print("=" * 40, file=sys.stderr)
 
     checker = GPUChecker(args.output_dir)

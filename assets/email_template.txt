@@ -4,16 +4,16 @@
   |\\ | |__  __ /  ` /  \\ |__) |__         }  {
   | \\| |       \\__, \\__/ |  \\ |___     \\`-._,-`-,
                                         `._,._,'
-  nf-core/resolvinf v${version}
+  nf-core/parallax v${version}
 ----------------------------------------------------
 
 Run Name: $runName
 
 <% if (success){
-    out << "## nf-core/resolvinf execution completed successfully! ##"
+    out << "## nf-core/parallax execution completed successfully! ##"
 } else {
     out << """####################################################
-## nf-core/resolvinf execution completed unsuccessfully! ##
+## nf-core/parallax execution completed unsuccessfully! ##
 ####################################################
 The exit status of the task that caused the workflow execution to fail was: $exitStatus.
 The full error message was:
@@ -36,5 +36,5 @@ Pipeline Configuration:
 <% out << summary.collect{ k,v -> " - $k: $v" }.join("\n") %>
 
 --
-nf-core/resolvinf
-https://github.com/nf-core/resolvinf
+nf-core/parallax
+https://github.com/nf-core/parallax

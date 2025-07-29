@@ -1,11 +1,11 @@
 #!/usr/bin/env nextflow
 /*
 ========================================================================================
-                         nf-core/resolvinf
+                         nf-core/parallax
 ========================================================================================
- nf-core/resolvinf Analysis Pipeline.
+ nf-core/parallax Analysis Pipeline.
  #### Homepage / Documentation
- https://github.com/nf-core/resolvinf
+ https://github.com/nf-core/parallax
 ----------------------------------------------------------------------------------------
 */
 
@@ -26,7 +26,7 @@ def helpMessage() {
 
     The typical command for running the pipeline is as follows:
 
-    nextflow run nf-core/resolvinf --input samplesheet.csv -profile docker
+    nextflow run nf-core/parallax --input samplesheet.csv -profile docker
 
     Mandatory arguments:
       --input [file]                  Path to comma-separated file containing information about the samples
@@ -118,7 +118,7 @@ def gpu_display = gpu_mode ? 'GPU (required)' : 'CPU-only (forced)'
 // Header log info
 log.info """
 =======================================================
-                    nf-core/resolvinf
+                    nf-core/parallax
 =======================================================
 """.stripIndent()
 
@@ -292,9 +292,9 @@ workflow {
  */
 workflow.onComplete {
     // Set up the e-mail variables
-    def subject = "[nf-core/resolvinf] Successful: $workflow.runName"
+    def subject = "[nf-core/parallax] Successful: $workflow.runName"
     if (!workflow.success) {
-        subject = "[nf-core/resolvinf] FAILED: $workflow.runName"
+        subject = "[nf-core/parallax] FAILED: $workflow.runName"
     }
     def email_fields = [:]
     email_fields['version'] = workflow.manifest.version
