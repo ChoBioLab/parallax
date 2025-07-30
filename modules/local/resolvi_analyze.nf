@@ -67,9 +67,11 @@ process RESOLVI_ANALYZE {
     
     # Generate annotation match column
     if "annotation" in adata.obs and "resolvi_predicted" in adata.obs:
-        adata.obs["annotation_match"] = (
-            adata.obs["annotation"] == adata.obs["resolvi_predicted"]
-        )
+        # Convert categoricals to strings to avoid category mismatch issues
+        annotation_str = adata.obs["annotation"].astype(str)
+        predicted_str = adata.obs["resolvi_predicted"].astype(str)
+        adata.obs["annotation_match"] = annotation_str == predicted_str
+    
         agreement_pct = (adata.obs["annotation_match"].sum() / len(adata)) * 100
         logger.info(f"Annotation agreement: {agreement_pct:.2f}%")
     else:
