@@ -3,8 +3,13 @@ name: parallax
 channels: [conda-forge, bioconda, pytorch, nvidia]
 dependencies:
   # Core Python
-  - python=3.11
+  - python=3.10
   - pip
+
+  # JAX ecosystem
+  - jax>=0.4.4,<0.7.0
+  - jaxlib>=0.4.4,<0.7.0
+  - numpyro>=0.13.0,<0.15.0
 
   # Visualization
   - matplotlib
@@ -20,3 +25,4 @@ dependencies:
       - spatialdata==0.4.0
       - spatialdata-io==0.2.0
       - multiqc==1.15
+
