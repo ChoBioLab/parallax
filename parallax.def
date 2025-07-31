@@ -1,0 +1,112 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+
+%labels
+    Author Christopher Tastad
+    Description Singularity container for nf-core/parallax pipeline with GPU support
+    Version 1.0
+
+%help
+    This container provides all software requirements for the nf-core/parallax pipeline
+    with proper GPU support for ResolVI and scVIVA training.
+
+%environment
+    export PYTHONNOUSERSITE=1
+    export R_PROFILE_USER="/.Rprofile"
+    export R_ENVIRON_USER="/.Renviron"
+    export JULIA_DEPOT_PATH="/usr/local/share/julia"
+    export CUDA_LAUNCH_BLOCKING=1
+    export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:512"
+    export NUMBA_CACHE_DIR="/tmp/numba_cache"
+    export PATH="/opt/conda/bin:$PATH"
+
+%post
+    # Update system packages
+    apt-get update && apt-get install -y \
+        wget \
+        bzip2 \
+        ca-certificates \
+        git \
+        vim \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Install additional system dependencies
+    apt-get update && apt-get install -y \
+        build-essential \
+        libhdf5-dev \
+        pkg-config \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Create conda environment directory
+    mkdir -p /opt/conda/envs/parallax
+
+    # Install core Python packages with pip (more reliable for GPU packages)
+    pip install --no-cache-dir \
+        numpy==1.24.3 \
+        pandas==2.0.3 \
+        scipy==1.11.1 \
+        scikit-learn==1.3.0 \
+        matplotlib==3.7.1 \
+        seaborn==0.12.2 \
+        scanpy==1.9.6 \
+        anndata==0.10.3 \
+        h5py==3.9.0 \
+        tables==3.8.0 \
+        zarr==2.16.1 \
+        dask==2023.8.1 \
+        xarray==2023.8.0 \
+        pyyaml==6.0.1 \
+        requests==2.31.0 \
+        tqdm==4.66.1 \
+        joblib==1.3.2
+
+    # Install JAX with CUDA support
+    pip install --no-cache-dir \
+        "jax[cuda12_pip]==0.4.20" \
+        -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+    # Install numpyro
+    pip install --no-cache-dir \
+        numpyro==0.13.2
+
+    # Install scvi-tools and dependencies
+    pip install --no-cache-dir \
+        scvi-tools==1.0.4 \
+        lightning==2.1.0 \
+        torchmetrics==1.2.0
+
+    # Install spatial data packages
+    pip install --no-cache-dir \
+        spatialdata==0.0.14 \
+        spatialdata-io==0.0.9 \
+        spatialdata-plot==0.0.4
+
+    # Install additional utilities
+    pip install --no-cache-dir \
+        multiqc==1.15 \
+        loompy==3.0.7 \
+        umap-learn==0.5.4 \
+        fa2==0.3.5 \
+        leidenalg==0.10.1 \
+        python-igraph==0.10.8
+
+    # Create necessary directories
+    mkdir -p /tmp/numba_cache
+    chmod 777 /tmp/numba_cache
+
+    # Clean up
+    pip cache purge
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%runscript
+    exec "$@"
+
+%test
+    # Test Python imports
+    python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+    python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+    python -c "import jax; print(f'JAX version: {jax.__version__}')"
+    python -c "import scvi; print(f'scvi-tools version: {scvi.__version__}')"
+    python -c "import scanpy; print(f'scanpy version: {scanpy.__version__}')"
+    python -c "import spatialdata; print(f'spatialdata version: {spatialdata.__version__}')"

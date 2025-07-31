@@ -4,6 +4,10 @@ process VALIDATE_GPU {
 
     conda "${projectDir}/environment.yml"
 
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'parallax.sif' :
+        'parallax:latest' }"
+
     containerOptions { workflow.containerEngine == 'singularity' ? '--nv' : '--gpus all' }
 
     output:

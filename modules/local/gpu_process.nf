@@ -4,6 +4,10 @@ process GPU_PROCESS {
 
     conda "${projectDir}/environment.yml"
 
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'parallax.sif' :
+        'parallax:latest' }"
+
     input:
     tuple val(meta), path(input_file)
 

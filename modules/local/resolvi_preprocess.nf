@@ -4,7 +4,9 @@ process RESOLVI_PREPROCESS {
 
     conda "${projectDir}/environment.yml"
 
-    containerOptions { workflow.containerEngine == 'singularity' ? '--nv' : '--gpus all' }
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'parallax.sif' :
+        'parallax:latest' }"
 
     input:
     tuple val(meta), path(zarr_path)
